@@ -23,6 +23,25 @@ def test_clean_and_split_title():
     assert track == "富士山下"
 
 
+def test_split_youtube_quote_title():
+    """HK MV titles often use 《歌名》 instead of Artist - Title."""
+    artist, track = split_artist_title("張敬軒 Hins Cheung《羅賓》[Official MV]")
+    assert track == "羅賓"
+    assert artist == "張敬軒"
+    cleaned = clean_track_query("張敬軒 Hins Cheung《羅賓》[Official MV]")
+    assert "羅賓" in cleaned
+    assert "Official" not in cleaned
+    assert "《" not in cleaned
+
+    artist2, track2 = split_artist_title("陳奕迅「富士山下」")
+    assert artist2 == "陳奕迅"
+    assert track2 == "富士山下"
+
+    artist3, track3 = split_artist_title("Eason Chan 陳奕迅 '時代巨輪' MV")
+    assert artist3 == "陳奕迅"
+    assert track3 == "時代巨輪"
+
+
 def test_exact_get_auto_applies(monkeypatch):
     hit = _rec(id=11, duration=180)
 
@@ -137,6 +156,32 @@ def test_lrc_offset_ignores_tiny_and_absurd_deltas(tmp_path, monkeypatch):
 
     monkeypatch.setattr(lyr, "vocal_onset_sec", lambda y: 17.5)
     assert la.lrc_offset_for_pack(pack, lines) == 7.5
+
+
+def test_lrc_offset_prefers_melody_over_vocal_onset(tmp_path, monkeypatch):
+    import json
+    from engine.pack import SongPack
+    import engine.lyrics_align as la
+    import engine.lyrics as lyr
+
+    pack = SongPack(tmp_path / "p")
+    pack.root.mkdir()
+    pack.vocals.write_bytes(b"x")
+    pack.melody.write_text(
+        json.dumps({"notes": [{"t": 16.95, "duration": 0.2, "midi": 60}]}),
+        encoding="utf-8",
+    )
+    lines = [{"t": 16.46, "end": 18.0, "text": "幾多套", "words": []}]
+
+    monkeypatch.setattr(lyr, "_load_vocals_16k", lambda p: [0.0])
+    # False early onset — must not win when melody exists.
+    monkeypatch.setattr(lyr, "vocal_onset_sec", lambda y: 11.234)
+    # 16.95 - 0.25 pad - 16.46 = 0.24 → below MIN → 0
+    assert la.lrc_offset_for_pack(pack, lines) == 0.0
+
+    lines_early = [{"t": 10.0, "end": 12.0, "text": "a", "words": []}]
+    # 16.70 - 10.0 = 6.70
+    assert la.lrc_offset_for_pack(pack, lines_early) == 6.7
 
 
 def test_line_count_sane_and_lock(tmp_path, monkeypatch):

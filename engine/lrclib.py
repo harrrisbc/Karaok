@@ -18,26 +18,51 @@ GET_DURATION_TOL = 2.0
 HttpFn = Callable[[str], tuple[int, Any]]
 
 _BRACKET = re.compile(r"\s*[\(\[【][^\)\]】]*[\)\]】]\s*")
+# 《羅賓》 / 「富士山下」 / '時代巨輪' / "Title"
+_QUOTE_INNER = re.compile(
+    r"[《「『‘“\"']([^》」』’”\"']+)[》」』’”\"']"
+)
 _NOISE_WORDS = re.compile(
     r"\b(official(\s+music)?\s+video|official\s+audio|lyrics?|mv|hd|4k|字幕版?)\b",
     re.I,
 )
 _ARTIST_SEP = re.compile(r"\s+(?:–|—|-)\s+")
+# "張敬軒 Hins Cheung" / "Eason Chan 陳奕迅" → prefer the CJK name for LRCLIB.
+_CJK_LATIN_ARTIST = re.compile(
+    r"^([\u3400-\u9fff]{2,})\s+[A-Za-z][A-Za-z .'-]+$"
+)
+_LATIN_CJK_ARTIST = re.compile(
+    r"^[A-Za-z][A-Za-z .'-]+\s+([\u3400-\u9fff]{2,})$"
+)
 
 
 def clean_track_query(title: str) -> str:
     text = (title or "").strip()
     text = _BRACKET.sub(" ", text)
+    text = _QUOTE_INNER.sub(r" \1 ", text)
     text = _NOISE_WORDS.sub(" ", text)
     return re.sub(r"\s+", " ", text).strip(" -_|") or (title or "").strip()
 
 
+def _prefer_cjk_artist(artist: str) -> str:
+    text = (artist or "").strip()
+    m = _CJK_LATIN_ARTIST.match(text) or _LATIN_CJK_ARTIST.match(text)
+    return m.group(1) if m else text
+
+
 def split_artist_title(title: str) -> tuple[str, str]:
     raw = (title or "").strip()
+    quoted = _QUOTE_INNER.search(raw)
+    if quoted:
+        track = quoted.group(1).strip()
+        before = raw[: quoted.start()].strip()
+        artist = _prefer_cjk_artist(clean_track_query(before)) if before else ""
+        if track:
+            return artist, track
     cleaned = clean_track_query(raw)
     parts = _ARTIST_SEP.split(cleaned, maxsplit=1)
     if len(parts) == 2 and parts[0].strip() and parts[1].strip():
-        return parts[0].strip(), parts[1].strip()
+        return _prefer_cjk_artist(parts[0].strip()), parts[1].strip()
     return "", cleaned or raw
 
 

@@ -250,27 +250,54 @@ def align_lyrics_from_text(
 
 MAX_LRC_OFFSET_SEC = 45.0
 MIN_LRC_OFFSET_SEC = 0.4
+# Melody notes start slightly after the sung syllable; pull lyric a touch earlier.
+MELODY_ONSET_PAD_SEC = 0.25
+
+
+def melody_onset_for_pack(pack: SongPack) -> float | None:
+    """First pitched note on our melody chart — same clock scoring uses."""
+    if not pack.melody.exists():
+        return None
+    try:
+        data = json.loads(pack.melody.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return None
+    notes = data.get("notes") or []
+    if not notes:
+        return None
+    try:
+        t = float(notes[0].get("t") or 0.0)
+    except (TypeError, ValueError):
+        return None
+    if t <= 0:
+        return None
+    return round(max(0.0, t - MELODY_ONSET_PAD_SEC), 3)
 
 
 def lrc_offset_for_pack(pack: SongPack, lines: list[dict[str, Any]]) -> float:
-    """Seconds to shift LRC so its first line meets real vocal onset.
+    """Seconds to shift LRC onto our pack's clock.
 
-    LRCLIB timings come from someone else's release. Even a duration match can
-    sit on a different intro length, which puts every line ahead of / behind the
-    music. Anchor on our own vocals instead of trusting the LRC clock.
+    Prefer the first melody note (what the pitch highway / scorer use). RMS
+    vocal-onset often fires on breath or bleed a few seconds early and pulls
+    every LRCLIB line off the notes. Fall back to vocal onset only when melody
+    is missing.
     """
-    if not lines or not pack.vocals.exists():
+    if not lines:
         return 0.0
-    try:
-        from engine.lyrics import _load_vocals_16k, vocal_onset_sec
+    onset = melody_onset_for_pack(pack)
+    if onset is None:
+        if not pack.vocals.exists():
+            return 0.0
+        try:
+            from engine.lyrics import _load_vocals_16k, vocal_onset_sec
 
-        onset = vocal_onset_sec(_load_vocals_16k(pack.vocals))
-    except Exception:
-        return 0.0
-    if onset <= 0:
+            onset = vocal_onset_sec(_load_vocals_16k(pack.vocals))
+        except Exception:
+            return 0.0
+    if onset is None or onset <= 0:
         return 0.0
     first = float(lines[0].get("t") or 0.0)
-    delta = onset - first
+    delta = float(onset) - first
     if abs(delta) < MIN_LRC_OFFSET_SEC or abs(delta) > MAX_LRC_OFFSET_SEC:
         return 0.0
     return round(delta, 3)

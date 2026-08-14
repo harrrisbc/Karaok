@@ -1,0 +1,7 @@
+# Live preview only (Mac control + overlay). No Demucs / Whisper / yt-dlp.
+fastapi>=0.115
+uvicorn[standard]>=0.32
+sounddevice>=0.5
+numpy>=1.26
+scipy>=1.11
+soundfile>=0.12

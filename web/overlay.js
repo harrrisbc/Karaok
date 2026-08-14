@@ -70,8 +70,35 @@ function setFail(failed, reason) {
     banner.hidden = true;
     return;
   }
+  setSuccess(null);
   banner.hidden = false;
   $("failReason").textContent = reason === "rhythm" ? "拍子 HP 0" : "音準 HP 0";
+}
+
+function setSuccess(result) {
+  const banner = $("successBanner");
+  const stage = $("stage");
+  if (!banner) return;
+  if (!result || result.outcome !== "clear") {
+    banner.hidden = true;
+    if (stage) stage.classList.remove("clear-result");
+    return;
+  }
+  const fail = $("failBanner");
+  if (fail) fail.hidden = true;
+  banner.hidden = false;
+  if (stage) stage.classList.add("clear-result");
+  const stars = Number(result.stars) || 0;
+  $("successStars").textContent = stars ? "★".repeat(stars) : "";
+  $("successTitle").textContent = result.title || "";
+  $("successSinger").textContent = result.singer || "—";
+  $("successScore").textContent = Number(result.score).toFixed(1);
+  $("successHpPitch").textContent = String(result.hp?.pitch ?? "—");
+  $("successHpRhythm").textContent = String(result.hp?.rhythm ?? "—");
+  $("successPitch").textContent = String(result.pitch ?? "—");
+  $("successRhythm").textContent = String(result.rhythm ?? "—");
+  $("successStable").textContent = String(result.stable ?? "—");
+  $("successDiff").textContent = String(result.difficulty || "normal").toUpperCase();
 }
 
 function setStable(stable) {
@@ -323,10 +350,16 @@ if (!preview) {
       if (msg.singer != null) $("singerName").textContent = msg.singer || "—";
       setHP(100, 100);
       setFail(false);
+      setSuccess(null);
       return;
     }
     if (msg.type === "idle") {
       setFail(false);
+      setSuccess(null);
+      return;
+    }
+    if (msg.type === "result") {
+      setSuccess(msg);
       return;
     }
     if (msg.type === "frame") {

@@ -24,13 +24,50 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def slugify(text: str) -> str:
-    """ASCII-only folder slug — Demucs/Windows cp950 choke on CJK pack paths."""
-    text = text.strip().lower()
-    text = re.sub(r"[^a-z0-9\s-]", "", text)
-    text = re.sub(r"[\s_-]+", "-", text).strip("-")
-    return text[:48] or "song"
+_WIN_FORBIDDEN = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_YT_NOISE = re.compile(
+    r"\b("
+    r"official(\s+music)?\s+video|"
+    r"official\s+audio|"
+    r"lyrics?\s*(video)?|"
+    r"music\s+video|"
+    r"mv|hd|4k|8k|"
+    r"official|"
+    r"字幕版?"
+    r")\b",
+    re.IGNORECASE,
+)
+_BRACKET_INNER = re.compile(r"[【\[]([^】\]]+)[】\]]")
+_QUOTE_INNER = re.compile(r"[《「『]([^》」』]+)[》」』]")
 
+
+def clean_youtube_title(text: str) -> str:
+    """Strip MV / Official Video noise; keep bracketed song names."""
+    text = (text or "").strip()
+    text = _BRACKET_INNER.sub(r" \1 ", text)
+    text = _QUOTE_INNER.sub(r" \1 ", text)
+    text = _YT_NOISE.sub(" ", text)
+    text = re.sub(r"\s+", " ", text).strip(" -_|")
+    return text or "song"
+
+
+def slugify(text: str) -> str:
+    """Folder-safe slug. Keeps CJK + ASCII; strips Windows-forbidden chars.
+
+    Demucs subprocesses run with UTF-8 (PYTHONUTF8), so CJK pack paths are OK.
+    """
+    text = clean_youtube_title(text)
+    text = text.strip().casefold()
+    text = _WIN_FORBIDDEN.sub("", text)
+    # Letters/digits from any script, plus space/hyphen/underscore.
+    text = re.sub(r"[^\w\s-]", "", text, flags=re.UNICODE)
+    text = re.sub(r"[\s_-]+", "-", text).strip("-_.")
+    if not text:
+        return "song"
+    # Windows reserved device names
+    if re.fullmatch(r"(con|prn|aux|nul|com\d|lpt\d)", text, flags=re.IGNORECASE):
+        text = f"song-{text}"
+    return text[:60] or "song"
 
 @dataclass
 class SongMeta:

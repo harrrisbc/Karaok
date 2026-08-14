@@ -1,15 +1,22 @@
 # Karaok
 
-Show overlay for live karaoke scoring. Camera stays in OBS / other software.
+Live karaoke scoring overlay. Camera stays in OBS / other software.
 
-**Prep** (lens off): drop MP3 or paste YouTube URL → stem split → melody + lyrics into a song pack.  
-**Show** (lens on): capture `http://127.0.0.1:8000/show` at 1920×1080.
+| Mode | What you get |
+|------|----------------|
+| **Windows full** | Prep (import → stems → melody/lyrics) + Live + Overlay |
+| **Mac preview** | Live control + Overlay + mic scoring only (load ready packs) |
 
-Only ingest songs you have the right to use.
+Only ingest / perform songs you have the right to use.
 
-## Setup (Windows)
+## Choose install
 
-Python **3.11** (not 3.14 — Demucs/torch need 3.11). GPU: RTX is used automatically when CUDA torch is installed.
+| You have… | Follow |
+|-----------|--------|
+| Windows show PC / prep machine | [docs/install-windows.md](docs/install-windows.md) |
+| Mac demo (boss / preview, no analyze) | [docs/install-mac-preview.md](docs/install-mac-preview.md) |
+
+### Quick start — Windows
 
 ```powershell
 cd C:\dev\Karaok
@@ -20,45 +27,61 @@ pip install -r requirements.txt
 pip install -r requirements-ml.txt
 pip install --upgrade --force-reinstall torch --index-url https://download.pytorch.org/whl/cu128
 winget install --id Gyan.FFmpeg -e
+.\scripts\run.ps1
 ```
 
-`requirements-ml.txt` is large (Demucs + librosa + whisper). Use the CUDA 12.8 torch wheel so Demucs / Whisper run on the RTX GPU.
+Then open http://127.0.0.1:8000/prep and http://127.0.0.1:8000/live.  
+OBS Browser Source: http://127.0.0.1:8000/show (1920×1080).
 
-## Run
+Full steps: [docs/install-windows.md](docs/install-windows.md).
 
-```powershell
-.\.venv\Scripts\python.exe -m uvicorn server.app:app --host 127.0.0.1 --port 8000
+### Quick start — Mac preview
+
+1. Copy this repo to the Mac.
+2. Copy a Windows `songs/` library (folders with `meta.json` + `instrumental.wav`).
+3. Install once, then run:
+
+```bash
+cd /path/to/Karaok
+bash scripts/mac/setup.sh
+bash scripts/mac/run.sh /path/to/copied-songs
 ```
 
-- Prep studio: http://127.0.0.1:8000/prep
-- Live scoring: http://127.0.0.1:8000/live
-- Overlay: http://127.0.0.1:8000/show
-- Overlay layout check: http://127.0.0.1:8000/show?preview=1
-- Transparent-ish stage: http://127.0.0.1:8000/show?transparent=1
+Browser opens `/live` (control) and `/show?preview=1` (overlay). Stop with Ctrl+C.  
+Allow Terminal microphone access when macOS asks.
 
-OBS: Browser Source, width 1920, height 1080, URL `/show` (**not** `?preview=1`).
+Full steps: [docs/install-mac-preview.md](docs/install-mac-preview.md).
 
-### Live / audio team
+## Repo layout
 
-1. Open `/live`. Pick interface **output** (instrumental only) and **input** (mic). Never route PC mic back to speakers.
-2. Start a pack. Read **FOH VOCAL DELAY** — that number is `output_ms`.
-3. Console: delay **FOH vocal** by that ms. Foldback / direct vocal stays **0 ms**.
-4. Overlay at `/show` follows the live WebSocket.
-
-Align trim on `/live` is scoring-only; do not copy it to the desk.
-
-See [docs/intent/phase-3-live-scoring.md](docs/intent/phase-3-live-scoring.md) and [docs/intent/phase-4-overlay.md](docs/intent/phase-4-overlay.md).
-
-CLI:
-
-```powershell
-.\.venv\Scripts\python.exe -m engine ingest "C:\path\song.mp3"
-.\.venv\Scripts\python.exe -m engine analyze <pack_id>
-.\.venv\Scripts\python.exe -m engine list
+```text
+engine/          audio, packs, scoring, prep pipelines
+server/          FastAPI — app.py (full), preview_app.py (Mac/live-only)
+web/             prep / live / overlay UI
+songs/           local song packs (gitignored audio)
+scripts/
+  run.ps1        Windows full server
+  mac/setup.sh   Mac preview one-time install
+  mac/run.sh     Mac preview start
+docs/
+  install-windows.md
+  install-mac-preview.md
+  intent/        design notes
+requirements.txt           full app (light)
+requirements-ml.txt        Demucs / Whisper / librosa
+requirements-preview.txt   Mac/live-only deps
 ```
 
-## Now vs next
+## Requirements files
 
-Done: song packs, ingest, Demucs, melody + lyrics, live scoring (device picker, FOH delay, Flat/Late), overlay HP + song/singer card.
+| File | Use |
+|------|-----|
+| `requirements.txt` | FastAPI, sounddevice, yt-dlp, … |
+| `requirements-ml.txt` | Prep models (pulls in `requirements.txt`) |
+| `requirements-preview.txt` | Live preview only — no torch / Demucs |
 
-Not yet: full show start/stop packaging, auto latency calibrate, score reveal.
+## Status
+
+Done: song packs, ingest, Demucs, melody + lyrics, live scoring, overlay HP / song card, Mac preview entry.
+
+Not yet: full show start/stop packaging, score reveal.

@@ -209,10 +209,11 @@ Nightingale maps guide-vocal toggle (`G`), guide volume (`+`/`-`), mic toggle, f
 
 ### 11. LAN / self-hosted mode
 
-Nightingale runs on a LAN box and is opened from other devices. Karaok binds `127.0.0.1`, so the video PC cannot pull `/show`.
+Nightingale runs on a LAN box and is opened from other devices. Karaok binds `127.0.0.1` by default so a video PC cannot pull `/show`.
 
-- Bind `0.0.0.0` behind an explicit flag, keep localhost the default.
-- Covers the existing "LAN bind" todo.
+- Bind `0.0.0.0` behind an explicit flag (`KARAOK_HOST` / uvicorn `--host`), keep localhost the default.
+- Operator desk is `/live`; sticky OBS capture is `/show`. Server stays on the audio PC.
+- Documented in README (two-machine show). Trusted venue LAN; no auth.
 
 ### 12. UltraStar Deluxe (USDX) song import
 

@@ -1,9 +1,15 @@
+# Python envs
 .venv/
+.venv-preview/
+
+# Caches / build junk
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .demucs/
 separated/
+
+# Local song packs (keep folder)
 songs/*
 !songs/.gitkeep
 *.wav
@@ -11,6 +17,8 @@ songs/*
 *.flac
 *.webm
 *.m4a
+
+# Editor / OS
 .cursor/
 .DS_Store
 Thumbs.db

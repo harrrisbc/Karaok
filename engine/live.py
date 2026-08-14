@@ -8,7 +8,14 @@ import numpy as np
 
 from engine.pack import SongPack, get_pack
 from engine.pitch import yin_f0
-from engine.score import HealthPoints, RunningSkill, score_snapshot
+from engine.score import (
+    DEFAULT_DIFFICULTY,
+    HealthPoints,
+    RunningSkill,
+    build_clear_result,
+    difficulty_params,
+    score_snapshot,
+)
 
 
 TARGET_SR = 48000
@@ -65,6 +72,7 @@ class LiveSession:
         self._lock = threading.Lock()
         self.running = False
         self.failed = False
+        self.cleared = False
         self.pack_id: str | None = None
         self.title = ""
         self.singer = ""
@@ -74,6 +82,11 @@ class LiveSession:
         self.words: list[dict] = []
         self.trim_ms = 0.0
         self.vocal_mix = 0.0
+        self.difficulty = DEFAULT_DIFFICULTY
+        params = difficulty_params(self.difficulty)
+        self.cents_limit = float(params["cents_limit"])
+        self.timing_limit = float(params["timing_limit"])
+        self.drain_per_sec = float(params["drain_per_sec"])
         self.input_ms = 0.0
         self.output_ms = 0.0
         self.input_device: int | None = None
@@ -87,7 +100,10 @@ class LiveSession:
         self._vocals: np.ndarray | None = None
         self._in_buf = np.zeros(YIN_FRAME, dtype=np.float32)
         self._skill = RunningSkill()
-        self._hp = HealthPoints()
+        self._hp = HealthPoints(
+            cents_limit=self.cents_limit,
+            drain_per_sec=self.drain_per_sec,
+        )
         self._sr = TARGET_SR
         self.calibrating = False
 
@@ -97,6 +113,7 @@ class LiveSession:
                 "running": self.running,
                 "calibrating": self.calibrating,
                 "failed": self.failed,
+                "cleared": self.cleared,
                 "pack_id": self.pack_id,
                 "title": self.title,
                 "singer": self.singer,
@@ -107,6 +124,10 @@ class LiveSession:
                 "input_channel": self.input_channel,
                 "trim_ms": self.trim_ms,
                 "vocal_mix": round(self.vocal_mix, 3),
+                "difficulty": self.difficulty,
+                "cents_limit": round(self.cents_limit, 1),
+                "timing_limit": round(self.timing_limit, 3),
+                "drain_per_sec": round(self.drain_per_sec, 1),
                 "input_ms": round(self.input_ms, 1),
                 "output_ms": round(self.output_ms, 1),
                 "foh_vocal_delay_ms": round(self.output_ms, 1),
@@ -138,6 +159,25 @@ class LiveSession:
     def set_vocal_mix(self, mix: float) -> None:
         with self._lock:
             self.vocal_mix = float(max(0.0, min(1.0, mix)))
+
+    def set_difficulty(self, name: str) -> None:
+        params = difficulty_params(name)
+        with self._lock:
+            self.difficulty = str(params["id"])
+            self.cents_limit = float(params["cents_limit"])
+            self.timing_limit = float(params["timing_limit"])
+            self.drain_per_sec = float(params["drain_per_sec"])
+            self._hp.configure(
+                cents_limit=self.cents_limit,
+                drain_per_sec=self.drain_per_sec,
+            )
+
+    def heal_hp(self, amount: float = 10.0) -> dict[str, float]:
+        with self._lock:
+            self._hp.heal(amount)
+            if self.latest.get("type") == "frame":
+                self.latest = {**self.latest, "hp": self._hp.as_dict(), "failed": self._hp.dead}
+            return self._hp.as_dict()
 
     def calibrate(
         self,
@@ -178,9 +218,12 @@ class LiveSession:
         vocal_mix: float = 0.0,
     ) -> dict[str, Any]:
         self.stop()
-        from engine.lyrics import drop_model_cache
+        try:
+            from engine.lyrics import drop_model_cache
 
-        drop_model_cache()
+            drop_model_cache()
+        except ImportError:
+            pass
         pack = get_pack(pack_id)
         if not pack.instrumental.exists():
             raise FileNotFoundError("instrumental.wav missing")
@@ -212,6 +255,7 @@ class LiveSession:
             self.title = meta.title
             self.singer = (singer if singer is not None else meta.singer) or ""
             self.failed = False
+            self.cleared = False
             self.notes = list(melody.get("notes") or [])
             self.lines = list(lyrics.get("lines") or [])
             self.words = list(lyrics.get("words") or [])
@@ -226,7 +270,10 @@ class LiveSession:
             self._instrumental = audio
             self._vocals = vocals
             self._skill = RunningSkill()
-            self._hp = HealthPoints()
+            self._hp = HealthPoints(
+                cents_limit=self.cents_limit,
+                drain_per_sec=self.drain_per_sec,
+            )
             self.running = True
             self._in_buf[:] = 0
 
@@ -344,6 +391,29 @@ class LiveSession:
             self.playback_pos = self._cursor / float(self._sr)
             if self._cursor >= len(audio):
                 self.running = False
+                self._freeze_clear_if_alive()
+
+    def _freeze_clear_if_alive(self) -> None:
+        """Natural end of track: CLEAR if HP survived. Caller holds the lock."""
+        if self.failed or self._hp.dead or self.cleared:
+            return
+        last = self.latest if self.latest.get("type") == "frame" else {}
+        meters = self._skill.as_dict()
+        hp = self._hp.as_dict()
+        score = last.get("score")
+        if score is None:
+            score = meters["pitch"] * 0.5 + meters["rhythm"] * 0.3 + meters["stable"] * 0.2
+        self.cleared = True
+        self.latest = build_clear_result(
+            title=self.title,
+            singer=self.singer,
+            score=float(score),
+            hp=hp,
+            pitch=last.get("pitch", meters["pitch"]),
+            rhythm=last.get("rhythm", meters["rhythm"]),
+            stable=last.get("stable", meters["stable"]),
+            difficulty=self.difficulty,
+        )
 
     def _on_in(self, indata) -> None:
         with self._lock:
@@ -372,16 +442,20 @@ class LiveSession:
                 dt=n / float(self._sr),
                 title=self.title,
                 singer=self.singer,
+                cents_limit=self.cents_limit,
+                timing_limit=self.timing_limit,
             )
             if self._hp.dead:
                 self.running = False
                 self.failed = True
+                self.cleared = False
 
     def stop(self) -> None:
         streams = []
         with self._lock:
             self.running = False
             self.failed = False
+            self.cleared = False
             streams = list(self._streams)
             self._streams = []
             self._instrumental = None

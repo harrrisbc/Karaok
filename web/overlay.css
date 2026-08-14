@@ -277,6 +277,87 @@ html.preview-fit #stage {
   color: var(--ink);
 }
 
+.success-banner {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-content: start center;
+  justify-items: center;
+  gap: 10px;
+  /* Sit above the lyric pill + highway so meters aren't covered. */
+  padding: 10vh 48px 280px;
+  background: rgba(6, 12, 10, 0.62);
+  pointer-events: none;
+}
+
+#stage.clear-result .bottom-stack {
+  visibility: hidden;
+}
+
+.success-banner[hidden] {
+  display: none;
+}
+
+.success-kicker {
+  font-size: 88px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  color: var(--ok);
+  text-shadow: 0 0 32px rgba(125, 255, 179, 0.45);
+}
+
+.success-stars {
+  min-height: 48px;
+  font-size: 48px;
+  letter-spacing: 0.18em;
+  color: var(--gold);
+  text-shadow: 0 0 18px rgba(240, 193, 75, 0.45);
+}
+
+.success-title {
+  max-width: 1400px;
+  text-align: center;
+  font-size: 36px;
+  font-weight: 800;
+}
+
+.success-singer {
+  font-size: 24px;
+  color: var(--muted);
+}
+
+.success-score {
+  font-size: 120px;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--gold);
+  text-shadow: 0 0 28px rgba(240, 193, 75, 0.4);
+}
+
+.success-meters {
+  display: flex;
+  gap: 36px;
+  margin-top: 12px;
+}
+
+.success-meters div {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+}
+
+.success-meters dt {
+  font-size: 14px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.success-meters dd {
+  font-size: 28px;
+  font-weight: 800;
+}
+
 /* —— Bottom stack: lyric pill + pitch highway —— */
 .bottom-stack {
   position: absolute;

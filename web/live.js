@@ -7,12 +7,25 @@ const trimEl = document.getElementById("trim");
 const trimVal = document.getElementById("trimVal");
 const vocalMixEl = document.getElementById("vocalMix");
 const vocalMixVal = document.getElementById("vocalMixVal");
+const difficultyEl = document.getElementById("difficulty");
+const diffHint = document.getElementById("diffHint");
+const healBtn = document.getElementById("healHp");
 const fohMs = document.getElementById("fohMs");
 const lat = document.getElementById("lat");
 const startBtn = document.getElementById("start");
 const calibrateBtn = document.getElementById("calibrate");
 const calibrationEl = document.getElementById("calibration");
 
+const DIFF_HINTS = {
+  easy: "Easy: pitch damage beyond ±80¢; EARLY/LATE ±150 ms; drain 6 HP/s.",
+  normal: "Normal: pitch damage beyond ±50¢; EARLY/LATE ±90 ms; drain 10 HP/s.",
+  hard: "Hard: pitch damage beyond ±35¢; EARLY/LATE ±60 ms; drain 14 HP/s.",
+  expert: "Expert: pitch damage beyond ±25¢; EARLY/LATE ±45 ms; drain 18 HP/s.",
+};
+
+function updateDiffHint() {
+  diffHint.textContent = DIFF_HINTS[difficultyEl.value] || DIFF_HINTS.normal;
+}
 function setTrim(value) {
   const trim = Math.max(-80, Math.min(80, Number(value) || 0));
   trimEl.value = String(trim);
@@ -29,6 +42,7 @@ function savePrefs() {
       pack: packEl.value,
       singer: singerEl.value,
       vocalMix: vocalMixEl.value,
+      difficulty: difficultyEl.value,
     }),
   );
 }
@@ -56,6 +70,12 @@ function applyStatus(s) {
     lat.textContent = s.frame?.fail_reason === "rhythm" ? "拍子 HP 0 — playback stopped" : "音準 HP 0 — playback stopped";
     return;
   }
+  if (s.cleared) {
+    const score = s.frame?.score;
+    fohMs.textContent = "CLEAR";
+    lat.textContent = `CLEAR · score ${score != null ? Number(score).toFixed(1) : "—"} · ${s.difficulty || "normal"}`;
+    return;
+  }
   const out = s.output_ms ?? s.foh_vocal_delay_ms;
   if (out != null && s.running) {
     fohMs.textContent = `${Number(out).toFixed(1)} ms`;
@@ -63,8 +83,11 @@ function applyStatus(s) {
     fohMs.textContent = "— ms";
   }
   lat.textContent = s.running
-    ? `input ${Number(s.input_ms).toFixed(1)} ms · output ${Number(s.output_ms).toFixed(1)} ms · trim ${s.trim_ms} · guide ${Math.round((s.vocal_mix || 0) * 100)}%`
+    ? `input ${Number(s.input_ms).toFixed(1)} ms · output ${Number(s.output_ms).toFixed(1)} ms · trim ${s.trim_ms} · guide ${Math.round((s.vocal_mix || 0) * 100)}% · ${s.difficulty || "normal"} · HP ${s.frame?.hp?.pitch ?? "—"}/${s.frame?.hp?.rhythm ?? "—"}`
     : "stopped — pick devices, then Start";
+  if (s.difficulty && difficultyEl.value !== s.difficulty) {
+    /* keep operator selection unless server reports mid-take change elsewhere */
+  }
 }
 
 async function loadDevices() {
@@ -90,10 +113,12 @@ async function loadDevices() {
   else if (data.default_output != null) outputEl.value = String(data.default_output);
   if (prefs.channel) channelEl.value = prefs.channel;
   if (prefs.vocalMix != null) vocalMixEl.value = prefs.vocalMix;
+  if (prefs.difficulty) difficultyEl.value = prefs.difficulty;
   if (localStorage.getItem("karaok-trim-ms") != null) {
     setTrim(localStorage.getItem("karaok-trim-ms"));
   }
   vocalMixVal.textContent = `${vocalMixEl.value}%`;
+  updateDiffHint();
 }
 
 async function loadPacks() {
@@ -126,6 +151,7 @@ startBtn.addEventListener("click", async () => {
     input_channel: Number(channelEl.value || 0),
     trim_ms: Number(trimEl.value),
     vocal_mix: Number(vocalMixEl.value || 0) / 100,
+    difficulty: difficultyEl.value || "normal",
     singer: singerEl.value.trim(),
   };
   const status = await jsonFetch("/api/live/start", {
@@ -230,6 +256,39 @@ vocalMixEl.addEventListener("input", () => {
   pushVocalMix();
 });
 
+difficultyEl.addEventListener("change", async () => {
+  updateDiffHint();
+  savePrefs();
+  try {
+    applyStatus(
+      await jsonFetch("/api/live/difficulty", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ difficulty: difficultyEl.value }),
+      }),
+    );
+  } catch {
+    /* idle */
+  }
+});
+
+healBtn.addEventListener("click", async () => {
+  try {
+    const status = await jsonFetch("/api/live/heal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount: 10 }),
+    });
+    applyStatus(status);
+    const hp = status.healed || status.frame?.hp;
+    if (hp) {
+      lat.textContent = `${lat.textContent} · healed → ${hp.pitch}/${hp.rhythm}`;
+    }
+  } catch (err) {
+    lat.textContent = String(err.message || err);
+  }
+});
+
 async function poll() {
   try {
     applyStatus(await jsonFetch("/api/live/status"));
@@ -244,3 +303,8 @@ loadDevices().catch((err) => {
 });
 loadPacks();
 poll();
+jsonFetch("/api/health")
+  .then((health) => {
+    if (health.preview) document.getElementById("prepLink")?.setAttribute("hidden", "");
+  })
+  .catch(() => {});

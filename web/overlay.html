@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>KARAOK — Show Overlay</title>
-  <link rel="stylesheet" href="/web/overlay.css?v=7" />
+  <link rel="stylesheet" href="/web/overlay.css?v=10" />
 </head>
 <body>
   <div id="stage">
@@ -44,11 +44,27 @@
       <p class="fail-reason" id="failReason">音準 HP 0</p>
     </div>
 
+    <div class="success-banner" id="successBanner" hidden>
+      <p class="success-kicker">CHALLENGE CLEAR</p>
+      <p class="success-stars" id="successStars"></p>
+      <p class="success-title" id="successTitle"></p>
+      <p class="success-singer" id="successSinger"></p>
+      <p class="success-score" id="successScore">--.-</p>
+      <dl class="success-meters">
+        <div><dt>音準 HP</dt><dd id="successHpPitch">—</dd></div>
+        <div><dt>拍子 HP</dt><dd id="successHpRhythm">—</dd></div>
+        <div><dt>PITCH</dt><dd id="successPitch">—</dd></div>
+        <div><dt>RHYTHM</dt><dd id="successRhythm">—</dd></div>
+        <div><dt>STABLE</dt><dd id="successStable">—</dd></div>
+        <div><dt>DIFF</dt><dd id="successDiff">—</dd></div>
+      </dl>
+    </div>
+
     <div class="bottom-stack">
       <section class="lyric-pill" id="lyrics" aria-label="lyrics">
         <span class="lyric-icon" aria-hidden="true">♪</span>
         <div class="lyric-stack">
-          <p class="lyric-line" id="lyricNow">Drop a song in Prep, then open this overlay in OBS.</p>
+          <p class="lyric-line" id="lyricNow">OBS capture — leave this page open. Control is on /live.</p>
           <p class="lyric-ghost" id="lyricNext"></p>
         </div>
       </section>
@@ -70,6 +86,6 @@
       </section>
     </div>
   </div>
-  <script src="/web/overlay.js?v=7"></script>
+  <script src="/web/overlay.js?v=10"></script>
 </body>
 </html>

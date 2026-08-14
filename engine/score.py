@@ -5,7 +5,44 @@ from typing import Any
 
 HP_DRAIN_PER_SEC = 10.0
 PITCH_CENTS_LIMIT = 50.0
+TIMING_LIMIT_SEC = 0.09
 
+# Operator desk presets — higher cents/timing = more forgiving; lower drain = slower fail.
+DIFFICULTY_PRESETS: dict[str, dict[str, float | str]] = {
+    "easy": {
+        "label": "Easy",
+        "cents_limit": 80.0,
+        "timing_limit": 0.15,
+        "drain_per_sec": 6.0,
+    },
+    "normal": {
+        "label": "Normal",
+        "cents_limit": 50.0,
+        "timing_limit": 0.09,
+        "drain_per_sec": 10.0,
+    },
+    "hard": {
+        "label": "Hard",
+        "cents_limit": 35.0,
+        "timing_limit": 0.06,
+        "drain_per_sec": 14.0,
+    },
+    "expert": {
+        "label": "Expert",
+        "cents_limit": 25.0,
+        "timing_limit": 0.045,
+        "drain_per_sec": 18.0,
+    },
+}
+DEFAULT_DIFFICULTY = "normal"
+
+
+def difficulty_params(name: str | None) -> dict[str, float | str]:
+    key = (name or DEFAULT_DIFFICULTY).strip().lower()
+    if key not in DIFFICULTY_PRESETS:
+        key = DEFAULT_DIFFICULTY
+    preset = DIFFICULTY_PRESETS[key]
+    return {"id": key, **preset}
 
 def cents_error(sung_hz: float, expected_hz: float) -> float:
     if sung_hz <= 0 or expected_hz <= 0:
@@ -166,11 +203,18 @@ def badges_for(
 
 
 class HealthPoints:
-    """Show HP: drain-only. Either bar at 0 ends the take."""
+    """Show HP: drains on bad pitch/timing. Manual heal via operator desk."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        cents_limit: float = PITCH_CENTS_LIMIT,
+        drain_per_sec: float = HP_DRAIN_PER_SEC,
+    ) -> None:
         self.pitch = 100.0
         self.rhythm = 100.0
+        self.cents_limit = float(cents_limit)
+        self.drain_per_sec = float(drain_per_sec)
 
     @property
     def dead(self) -> bool:
@@ -184,6 +228,16 @@ class HealthPoints:
             return "rhythm"
         return None
 
+    def configure(self, *, cents_limit: float, drain_per_sec: float) -> None:
+        self.cents_limit = float(cents_limit)
+        self.drain_per_sec = float(drain_per_sec)
+
+    def heal(self, amount: float = 10.0) -> None:
+        """Add HP to both bars (operator mercy). Does not un-fail a stopped take."""
+        bump = max(0.0, float(amount))
+        self.pitch = min(100.0, self.pitch + bump)
+        self.rhythm = min(100.0, self.rhythm + bump)
+
     def tick(
         self,
         *,
@@ -194,17 +248,16 @@ class HealthPoints:
     ) -> None:
         if self.dead or dt <= 0:
             return
-        if voiced and cents is not None and abs(cents) >= PITCH_CENTS_LIMIT:
-            self.pitch = max(0.0, self.pitch - HP_DRAIN_PER_SEC * dt)
+        if voiced and cents is not None and abs(cents) >= self.cents_limit:
+            self.pitch = max(0.0, self.pitch - self.drain_per_sec * dt)
         if "early" in badges or "late" in badges:
-            self.rhythm = max(0.0, self.rhythm - HP_DRAIN_PER_SEC * dt)
+            self.rhythm = max(0.0, self.rhythm - self.drain_per_sec * dt)
 
     def as_dict(self) -> dict[str, float]:
         return {
             "pitch": round(self.pitch, 1),
             "rhythm": round(self.rhythm, 1),
         }
-
 
 class RunningSkill:
     def __init__(self) -> None:
@@ -254,6 +307,8 @@ def score_snapshot(
     singer: str = "",
     dt: float = 0.0,
     words: list[dict] | None = None,
+    cents_limit: float = PITCH_CENTS_LIMIT,
+    timing_limit: float = TIMING_LIMIT_SEC,
 ) -> dict[str, Any]:
     align_t = align_time(playback_pos, output_ms, input_ms, trim_ms)
     note = note_at(notes, align_t)
@@ -261,13 +316,20 @@ def score_snapshot(
     cents = None
     if voiced and sung_hz and expected_hz:
         cents = cents_error(sung_hz, expected_hz)
-    flags = badges_for(cents=cents, voiced=voiced, align_t=align_t, note=note)
+    flags = badges_for(
+        cents=cents,
+        voiced=voiced,
+        align_t=align_t,
+        note=note,
+        cents_limit=cents_limit,
+        timing_limit=timing_limit,
+    )
     skill.update(voiced=voiced and cents is not None, cents=cents, badges=flags)
     hp.tick(voiced=voiced and cents is not None, cents=cents, badges=flags, dt=dt)
     meters = skill.as_dict()
     cur, nxt, progress = line_at(lines, align_t, words)
     remaining = max(0.0, duration - playback_pos)
-    in_tune = abs(cents) < 35 if cents is not None else False
+    in_tune = abs(cents) < (cents_limit * 0.7) if cents is not None else False
     score = (meters["pitch"] * 0.5 + meters["rhythm"] * 0.3 + meters["stable"] * 0.2)
     return {
         "type": "frame",
@@ -299,4 +361,43 @@ def score_snapshot(
             "trim_ms": round(trim_ms, 1),
             "foh_vocal_delay_ms": round(output_ms, 1),
         },
+    }
+
+
+def stars_for_score(score: float) -> int:
+    if score >= 90:
+        return 3
+    if score >= 75:
+        return 2
+    if score >= 60:
+        return 1
+    return 0
+
+
+def build_clear_result(
+    *,
+    title: str,
+    singer: str,
+    score: float,
+    hp: dict[str, float],
+    pitch: int | float,
+    rhythm: int | float,
+    stable: int | float,
+    difficulty: str,
+) -> dict[str, Any]:
+    return {
+        "type": "result",
+        "outcome": "clear",
+        "title": title,
+        "singer": singer,
+        "score": round(float(score), 1),
+        "hp": {
+            "pitch": round(float(hp.get("pitch", 0)), 1),
+            "rhythm": round(float(hp.get("rhythm", 0)), 1),
+        },
+        "pitch": int(round(float(pitch))),
+        "rhythm": int(round(float(rhythm))),
+        "stable": int(round(float(stable))),
+        "difficulty": difficulty,
+        "stars": stars_for_score(float(score)),
     }

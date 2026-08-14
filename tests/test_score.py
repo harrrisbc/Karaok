@@ -4,11 +4,13 @@ from engine.score import (
     RunningSkill,
     align_time,
     badges_for,
+    build_clear_result,
     cents_error,
     line_at,
     note_at,
     progress_in_line,
     score_snapshot,
+    stars_for_score,
 )
 
 
@@ -134,12 +136,42 @@ def test_hp_late_drains_rhythm_only():
     assert abs(hp.rhythm - (100.0 - HP_DRAIN_PER_SEC)) < 1e-6
 
 
-def test_hp_does_not_recover():
+def test_hp_does_not_auto_recover():
     hp = HealthPoints()
     hp.tick(voiced=True, cents=-80.0, badges=["flat"], dt=2.0)
     drained = hp.pitch
     hp.tick(voiced=True, cents=0.0, badges=[], dt=2.0)
     assert hp.pitch == drained
+
+
+def test_hp_manual_heal():
+    hp = HealthPoints()
+    hp.tick(voiced=True, cents=-80.0, badges=["flat"], dt=5.0)
+    assert hp.pitch < 100.0
+    hp.heal(10)
+    assert abs(hp.pitch - (100.0 - 5 * HP_DRAIN_PER_SEC + 10)) < 1e-6
+    hp.heal(100)
+    assert hp.pitch == 100.0
+    assert hp.rhythm == 100.0
+
+
+def test_hp_custom_cents_limit_and_drain():
+    easy = HealthPoints(cents_limit=80.0, drain_per_sec=5.0)
+    easy.tick(voiced=True, cents=-60.0, badges=["flat"], dt=1.0)
+    assert easy.pitch == 100.0  # within easy limit
+    easy.tick(voiced=True, cents=-90.0, badges=["flat"], dt=1.0)
+    assert abs(easy.pitch - 95.0) < 1e-6
+
+
+def test_difficulty_presets():
+    from engine.score import DIFFICULTY_PRESETS, difficulty_params
+
+    assert "normal" in DIFFICULTY_PRESETS
+    easy = difficulty_params("easy")
+    hard = difficulty_params("hard")
+    assert float(easy["cents_limit"]) > float(hard["cents_limit"])
+    assert float(easy["drain_per_sec"]) < float(hard["drain_per_sec"])
+    assert difficulty_params("nope")["id"] == "normal"
 
 
 def test_hp_pitch_zero_is_dead():
@@ -177,3 +209,32 @@ def test_score_snapshot_includes_hp_and_fail():
     assert snap["hp"]["pitch"] == 0.0
     assert snap["failed"] is True
     assert snap["fail_reason"] == "pitch"
+
+
+def test_stars_for_score_thresholds():
+    assert stars_for_score(59.9) == 0
+    assert stars_for_score(60) == 1
+    assert stars_for_score(74.9) == 1
+    assert stars_for_score(75) == 2
+    assert stars_for_score(89.9) == 2
+    assert stars_for_score(90) == 3
+    assert stars_for_score(100) == 3
+
+
+def test_build_clear_result_payload():
+    payload = build_clear_result(
+        title="1874",
+        singer="Haris",
+        score=87.3,
+        hp={"pitch": 62.0, "rhythm": 81.0},
+        pitch=80,
+        rhythm=70,
+        stable=75,
+        difficulty="normal",
+    )
+    assert payload["type"] == "result"
+    assert payload["outcome"] == "clear"
+    assert payload["stars"] == 2
+    assert payload["score"] == 87.3
+    assert payload["title"] == "1874"
+

@@ -9,3 +9,4 @@
 
 Done: Phase 0–3 (stems, melody, lyrics, live scoring + FOH delay).
 Phase 4 spec: [phase-4-overlay.md](phase-4-overlay.md) — overlay layout, song/singer card, HP fail.
+Backlog: [enhancements-from-nightingale.md](enhancements-from-nightingale.md) — ideas borrowed from a similar OSS karaoke app.

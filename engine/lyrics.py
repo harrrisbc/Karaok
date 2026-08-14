@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import traceback
 import warnings
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
@@ -153,7 +154,21 @@ def decode_options(model_name: str, device: str) -> dict:
 
 
 def release_cuda() -> None:
-    """Drop cached CUDA blocks so Demucs can start after Whisper."""
+    """Drop any cached Whisper/stable-ts model, then free CUDA blocks for Demucs."""
+    drop_model_cache()
+
+
+_model_lock = threading.Lock()
+_cached_model = None
+_cached_key: tuple[str, str, str] | None = None
+
+
+def drop_model_cache() -> None:
+    """Drop the cached model reference and empty the CUDA cache."""
+    global _cached_model, _cached_key
+    with _model_lock:
+        _cached_model = None
+        _cached_key = None
     import gc
 
     gc.collect()
@@ -164,6 +179,44 @@ def release_cuda() -> None:
             torch.cuda.empty_cache()
     except Exception:
         pass
+
+
+def get_cached_model(name: str, device: str, kind: str = "whisper"):
+    """Return a loaded model; reuse if (kind, name, device) matches."""
+    global _cached_model, _cached_key
+    key = (kind, name, device)
+    with _model_lock:
+        if _cached_key == key and _cached_model is not None:
+            return _cached_model
+        _cached_model = None
+        _cached_key = None
+    # Free VRAM before loading a different checkpoint (or after a miss).
+    import gc
+
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
+
+    if kind == "stable":
+        import stable_whisper
+
+        model = stable_whisper.load_model(name, device=device)
+    elif kind == "whisper":
+        import whisper
+
+        model = whisper.load_model(name, device=device)
+    else:
+        raise ValueError(f"unsupported model kind: {kind}")
+
+    with _model_lock:
+        _cached_model = model
+        _cached_key = key
+        return _cached_model
 
 
 def _clean_text(text: str) -> str:
@@ -299,8 +352,6 @@ def extract_lyrics(
     if not lyrics_available():
         raise RuntimeError("openai-whisper 未安裝。pip install openai-whisper")
 
-    import whisper
-
     meta = pack.load_meta()
     lang_key = normalize_lang(language or getattr(meta, "lyrics_lang", None) or DEFAULT_LANG)
     preset = LANG_PRESETS[lang_key]
@@ -317,10 +368,9 @@ def extract_lyrics(
     if onset > 0.4:
         decode["clip_timestamps"] = [onset]
 
-    model = None
     try:
         with _silence_tqdm():
-            model = whisper.load_model(model_name, device=device)
+            model = get_cached_model(model_name, device, kind="whisper")
         with _quiet_stdio():
             try:
                 result = model.transcribe(audio, word_timestamps=True, **decode)
@@ -334,9 +384,6 @@ def extract_lyrics(
         err_path = pack.root / "lyrics.error.txt"
         if err_path.exists():
             err_path.unlink()
-    finally:
-        del model
-        release_cuda()
 
     lines: list[dict] = []
     words: list[dict] = []
@@ -375,6 +422,8 @@ def extract_lyrics(
         "text": full_text,
         "lines": lines,
         "words": words,
+        "source": "whisper",
+        "locked": False,
     }
     pack.lyrics.write_text(
         json.dumps(payload, indent=2, ensure_ascii=False),

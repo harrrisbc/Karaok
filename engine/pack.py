@@ -104,6 +104,41 @@ class SongPack:
         self.save_meta(meta)
         return meta
 
+    def lyrics_provenance(self) -> dict:
+        """Lightweight lyrics source for Prep UI — empty if no lyrics.json."""
+        if not self.lyrics.exists():
+            return {
+                "lyrics_source": None,
+                "lyrics_method": None,
+                "lyrics_locked": False,
+                "lrclib_id": None,
+            }
+        try:
+            payload = json.loads(self.lyrics.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {
+                "lyrics_source": None,
+                "lyrics_method": None,
+                "lyrics_locked": False,
+                "lrclib_id": None,
+            }
+        lrclib = payload.get("lrclib") if isinstance(payload.get("lrclib"), dict) else {}
+        source = payload.get("source")
+        method = payload.get("method")
+        if not source:
+            if method and str(method).startswith("lrclib"):
+                source = "lrclib"
+            elif method == "openai-whisper":
+                source = "whisper"
+            elif method in ("lyric-txt-correct", "stable-ts-align", "remap-existing-timing"):
+                source = "user-txt"
+        return {
+            "lyrics_source": source,
+            "lyrics_method": method,
+            "lyrics_locked": bool(payload.get("locked")),
+            "lrclib_id": lrclib.get("id"),
+        }
+
     def public_dict(self) -> dict:
         meta = self.load_meta()
         data = meta.to_json()
@@ -111,6 +146,7 @@ class SongPack:
         data["has_instrumental"] = self.instrumental.exists()
         data["has_melody"] = self.melody.exists()
         data["has_lyrics"] = self.lyrics.exists()
+        data.update(self.lyrics_provenance())
         return data
 
 
@@ -142,9 +178,11 @@ def create_pack(
 def list_packs() -> list[SongPack]:
     ensure_dirs()
     packs: list[SongPack] = []
-    for child in sorted(SONGS_DIR.iterdir(), reverse=True):
+    for child in SONGS_DIR.iterdir():
         if child.is_dir() and (child / "meta.json").exists():
             packs.append(SongPack(child))
+    # Newest first (created_at), so Prep doesn't hide fresh imports mid-list.
+    packs.sort(key=lambda p: p.load_meta().created_at or "", reverse=True)
     return packs
 
 

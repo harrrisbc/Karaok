@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from engine.lyrics import extract_lyrics, release_cuda
+from engine.lyrics import drop_model_cache, extract_lyrics, release_cuda
 from engine.pack import create_pack
 
 
@@ -19,7 +19,7 @@ def _cuda_mem_mb() -> float:
     __import__("importlib").util.find_spec("torch") is None,
     reason="torch not installed",
 )
-def test_large_v3_releases_cuda_after_lyrics(tmp_path, monkeypatch):
+def test_large_v3_releases_cuda_when_cache_dropped(tmp_path, monkeypatch):
     import torch
 
     if not torch.cuda.is_available():
@@ -37,8 +37,11 @@ def test_large_v3_releases_cuda_after_lyrics(tmp_path, monkeypatch):
     release_cuda()
     before = _cuda_mem_mb()
     payload = extract_lyrics(pack, model_name="large-v3", language="english")
+    cached = _cuda_mem_mb()
+    drop_model_cache()
     after = _cuda_mem_mb()
 
     assert payload["model"] == "large-v3"
-    # Weights must not stay reserved after extract_lyrics returns.
+    assert cached > 1500, f"Whisper model was unexpectedly not cached: {cached:.0f} MiB"
+    # Demucs / Live use this explicit cache clear before consuming GPU VRAM.
     assert after < 1500, f"CUDA still reserved {after:.0f} MiB (was {before:.0f})"

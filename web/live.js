@@ -9,6 +9,15 @@ const vocalMixEl = document.getElementById("vocalMix");
 const vocalMixVal = document.getElementById("vocalMixVal");
 const fohMs = document.getElementById("fohMs");
 const lat = document.getElementById("lat");
+const startBtn = document.getElementById("start");
+const calibrateBtn = document.getElementById("calibrate");
+const calibrationEl = document.getElementById("calibration");
+
+function setTrim(value) {
+  const trim = Math.max(-80, Math.min(80, Number(value) || 0));
+  trimEl.value = String(trim);
+  trimVal.textContent = String(trim);
+}
 
 function savePrefs() {
   localStorage.setItem(
@@ -40,6 +49,8 @@ async function jsonFetch(url, options) {
 }
 
 function applyStatus(s) {
+  startBtn.disabled = Boolean(s.running || s.calibrating);
+  calibrateBtn.disabled = Boolean(s.running || s.calibrating);
   if (s.failed) {
     fohMs.textContent = "FAILED";
     lat.textContent = s.frame?.fail_reason === "rhythm" ? "拍子 HP 0 — playback stopped" : "音準 HP 0 — playback stopped";
@@ -79,6 +90,9 @@ async function loadDevices() {
   else if (data.default_output != null) outputEl.value = String(data.default_output);
   if (prefs.channel) channelEl.value = prefs.channel;
   if (prefs.vocalMix != null) vocalMixEl.value = prefs.vocalMix;
+  if (localStorage.getItem("karaok-trim-ms") != null) {
+    setTrim(localStorage.getItem("karaok-trim-ms"));
+  }
   vocalMixVal.textContent = `${vocalMixEl.value}%`;
 }
 
@@ -103,7 +117,7 @@ function fillSingerFromPack(prefSinger) {
 
 packEl.addEventListener("change", () => fillSingerFromPack(""));
 
-document.getElementById("start").addEventListener("click", async () => {
+startBtn.addEventListener("click", async () => {
   savePrefs();
   const body = {
     pack_id: packEl.value,
@@ -124,6 +138,57 @@ document.getElementById("start").addEventListener("click", async () => {
 
 document.getElementById("stop").addEventListener("click", async () => {
   applyStatus(await jsonFetch("/api/live/stop", { method: "POST" }));
+});
+
+calibrateBtn.addEventListener("click", async () => {
+  calibrateBtn.disabled = true;
+  calibrationEl.hidden = false;
+  calibrationEl.textContent = "Playing click… keep the mic pointed at the speaker.";
+  try {
+    const result = await jsonFetch("/api/live/calibrate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        input_device: Number(inputEl.value),
+        output_device: Number(outputEl.value),
+        input_channel: Number(channelEl.value || 0),
+      }),
+    });
+    if (!result.ok) {
+      calibrationEl.textContent =
+        result.error === "weak_signal"
+          ? "Mic 冇收到 click。開大喇叭、對準 mic，或者檢查 input device。"
+          : result.message || "Calibration failed.";
+      return;
+    }
+    calibrationEl.textContent = `${result.message} `;
+    const apply = document.createElement("button");
+    apply.type = "button";
+    apply.textContent = "Apply";
+    apply.addEventListener("click", async () => {
+      setTrim(result.proposed_trim_ms);
+      const status = await jsonFetch("/api/live/trim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trim_ms: Number(trimEl.value) }),
+      });
+      localStorage.setItem("karaok-trim-ms", trimEl.value);
+      calibrationEl.textContent = `Applied trim ${trimEl.value} ms.`;
+      applyStatus(status);
+    });
+    const dismiss = document.createElement("button");
+    dismiss.type = "button";
+    dismiss.textContent = "Dismiss";
+    dismiss.addEventListener("click", () => {
+      calibrationEl.hidden = true;
+      calibrationEl.textContent = "";
+    });
+    calibrationEl.append(apply, dismiss);
+  } catch (err) {
+    calibrationEl.textContent = String(err.message || err);
+  } finally {
+    calibrateBtn.disabled = false;
+  }
 });
 
 trimEl.addEventListener("input", () => {

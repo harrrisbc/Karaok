@@ -11,7 +11,15 @@ from pydantic import BaseModel, Field
 
 from engine.devices import default_device_indices, list_devices
 from engine.ingest import has_youtube_tools
-from engine.jobs import BusyError, runner, start_analyze, start_local_import, start_lyrics_align, start_youtube_import
+from engine.jobs import (
+    BusyError,
+    runner,
+    start_analyze,
+    start_local_import,
+    start_lyrics_align,
+    start_lyrics_whisper,
+    start_youtube_import,
+)
 from engine.live import session
 from engine.lyrics import (
     LANG_PRESETS,
@@ -192,6 +200,7 @@ def job_analyze(
     pack_id: str,
     lang: str | None = Form(default=None),
     whisper_model: str | None = Form(default=None),
+    prefer_whisper: bool = Form(default=False),
 ) -> dict:
     try:
         get_pack(pack_id)
@@ -200,6 +209,30 @@ def job_analyze(
     lyrics_lang = _parse_lang(lang) if lang else None
     return _start_or_busy(
         lambda: start_analyze(
+            pack_id,
+            lyrics_lang=lyrics_lang,
+            whisper_model=_parse_model(whisper_model),
+            prefer_whisper=bool(prefer_whisper),
+        )
+    )
+
+
+@app.post("/api/jobs/lyrics-whisper/{pack_id}")
+def job_lyrics_whisper(
+    pack_id: str,
+    lang: str | None = Form(default=None),
+    whisper_model: str | None = Form(default=None),
+) -> dict:
+    """Force Whisper lyrics — skip LRCLIB. Use when LRCLIB timing/text is wrong."""
+    try:
+        pack = get_pack(pack_id)
+    except FileNotFoundError:
+        raise HTTPException(404, "song pack 唔存在") from None
+    if not pack.vocals.exists():
+        raise HTTPException(400, "vocals.wav missing — 先 Import / split") from None
+    lyrics_lang = _parse_lang(lang) if lang else None
+    return _start_or_busy(
+        lambda: start_lyrics_whisper(
             pack_id,
             lyrics_lang=lyrics_lang,
             whisper_model=_parse_model(whisper_model),
@@ -308,6 +341,12 @@ class LiveTrimBody(BaseModel):
     trim_ms: float = Field(ge=-80, le=80)
 
 
+class LiveCalibrateBody(BaseModel):
+    input_device: int | None = None
+    output_device: int | None = None
+    input_channel: int = Field(default=0, ge=0)
+
+
 class LiveVocalMixBody(BaseModel):
     vocal_mix: float = Field(ge=0, le=1)
 
@@ -354,6 +393,15 @@ def live_stop() -> dict:
 def live_trim(body: LiveTrimBody) -> dict:
     session.set_trim(body.trim_ms)
     return session.status()
+
+
+@app.post("/api/live/calibrate")
+def live_calibrate(body: LiveCalibrateBody) -> dict:
+    return session.calibrate(
+        input_device=body.input_device,
+        output_device=body.output_device,
+        input_channel=body.input_channel,
+    )
 
 
 @app.post("/api/live/vocal-mix")

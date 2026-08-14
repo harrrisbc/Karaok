@@ -7,6 +7,7 @@ from engine.score import (
     cents_error,
     line_at,
     note_at,
+    progress_in_line,
     score_snapshot,
 )
 
@@ -65,6 +66,37 @@ def test_line_at_previews_next_in_intro_and_gap():
     assert cur["text"] == "a"
     assert nxt["text"] == "b"
     assert prog == 1.0
+
+
+def test_progress_in_line_falls_back_to_linear_without_words():
+    line = {"t": 0.0, "end": 4.0, "text": "abcd"}
+    assert abs(progress_in_line(line, 1.0) - 0.25) < 1e-6
+    assert abs(progress_in_line(line, 1.0, [{"t": 0, "end": 1, "text": "nope"}]) - 0.25) < 1e-6
+
+
+def test_progress_in_line_uses_word_timestamps_and_holds_gaps():
+    line = {"t": 0.0, "end": 4.0, "text": "朋友"}
+    words = [
+        {"t": 0.0, "end": 1.0, "text": "朋"},
+        {"t": 3.0, "end": 4.0, "text": "友"},
+    ]
+    assert abs(progress_in_line(line, -0.1, words) - 0.0) < 1e-6
+    assert abs(progress_in_line(line, 0.5, words) - 0.25) < 1e-6
+    # The 1–3s gap holds at the first word boundary instead of creeping linearly.
+    assert abs(progress_in_line(line, 2.0, words) - 0.5) < 1e-6
+    assert abs(progress_in_line(line, 3.5, words) - 0.75) < 1e-6
+    assert abs(progress_in_line(line, 4.1, words) - 1.0) < 1e-6
+
+
+def test_line_at_uses_top_level_word_timestamps():
+    lines = [{"t": 0.0, "end": 4.0, "text": "朋友"}]
+    words = [
+        {"t": 0.0, "end": 1.0, "text": "朋"},
+        {"t": 3.0, "end": 4.0, "text": "友"},
+    ]
+    current, _, progress = line_at(lines, 2.0, words)
+    assert current == lines[0]
+    assert abs(progress - 0.5) < 1e-6
 
 
 def test_hp_starts_full():

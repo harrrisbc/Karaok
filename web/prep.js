@@ -44,6 +44,15 @@ function setBusy(on, reason = "") {
   songsEl.querySelectorAll("[data-analyze]").forEach((el) => {
     el.disabled = on;
   });
+  songsEl.querySelectorAll("[data-whisper]").forEach((el) => {
+    el.disabled = on;
+  });
+  songsEl.querySelectorAll("[data-align]").forEach((el) => {
+    el.disabled = on;
+  });
+  songsEl.querySelectorAll("[data-save-singer]").forEach((el) => {
+    el.disabled = on;
+  });
   if (on) {
     jobEl.hidden = false;
     if (reason) jobEl.textContent = reason;
@@ -56,6 +65,23 @@ function assetsLabel(song) {
   if (song.has_melody) bits.push("melody");
   if (song.has_lyrics) bits.push("lyrics");
   return bits.length ? bits.join("+") : "empty";
+}
+
+function lyricsLabel(song) {
+  if (!song.has_lyrics) return "lyrics: —";
+  const src = song.lyrics_source;
+  const method = song.lyrics_method || "";
+  const locked = song.lyrics_locked ? " · locked" : "";
+  if (src === "lrclib" || String(method).startsWith("lrclib")) {
+    const id = song.lrclib_id != null ? ` #${song.lrclib_id}` : "";
+    return `lyrics: LRCLIB${id}${locked}`;
+  }
+  if (src === "whisper" || method === "openai-whisper") return `lyrics: Whisper${locked}`;
+  if (src === "user-txt" || method === "lyric-txt-correct" || method === "stable-ts-align") {
+    return `lyrics: txt/align${locked}`;
+  }
+  if (method) return `lyrics: ${method}${locked}`;
+  return `lyrics: yes${locked}`;
 }
 
 function formatJob(job) {
@@ -105,6 +131,25 @@ async function analyzePack(packId) {
   }
 }
 
+async function retryWhisper(packId) {
+  if (busy) return;
+  setBusy(true, `retry Whisper · ${packId}…`);
+  try {
+    const body = new FormData();
+    body.append("lang", selectedLang());
+    body.append("whisper_model", selectedModel());
+    const job = await jsonFetch(`/api/jobs/lyrics-whisper/${packId}`, {
+      method: "POST",
+      body,
+    });
+    pollJob(job.id);
+  } catch (err) {
+    setBusy(false);
+    jobEl.hidden = false;
+    jobEl.textContent = String(err.message || err);
+  }
+}
+
 async function alignLyrics(packId, file) {
   if (busy) return;
   if (!file) return;
@@ -138,6 +183,9 @@ async function loadSongs() {
         : `<input data-singer-input="${song.id}" placeholder="singer" maxlength="120" ${busy ? "disabled" : ""} />`;
       const canAlign = song.has_vocals;
       const btn = `<button type="button" data-analyze="${song.id}" ${busy ? "disabled" : ""}>Analyze</button>`;
+      const whisperBtn = canAlign
+        ? `<button type="button" data-whisper="${song.id}" title="Skip LRCLIB, run Whisper ASR" ${busy ? "disabled" : ""}>Retry Whisper</button>`
+        : "";
       const align = canAlign
         ? `<button type="button" data-align="${song.id}" ${busy ? "disabled" : ""}>Align lyrics</button>
            <input type="file" accept=".txt,text/plain" data-align-file="${song.id}" hidden />`
@@ -145,10 +193,11 @@ async function loadSongs() {
       const save = `<button type="button" data-save-singer="${song.id}" ${busy ? "disabled" : ""}>Save singer</button>`;
       return `<li>
         <span>${song.title}</span>
-        <span class="status">${song.status} · ${assetsLabel(song)} · ${lang}${song.singer ? ` · ${song.singer}` : ""}</span>
+        <span class="status">${song.status} · ${assetsLabel(song)} · ${lyricsLabel(song)} · ${lang}${song.singer ? ` · ${song.singer}` : ""}</span>
         ${singer}
         ${save}
         ${btn}
+        ${whisperBtn}
         ${align}
         ${err}
       </li>`;
@@ -157,6 +206,9 @@ async function loadSongs() {
 
   songsEl.querySelectorAll("[data-analyze]").forEach((el) => {
     el.addEventListener("click", () => analyzePack(el.getAttribute("data-analyze")));
+  });
+  songsEl.querySelectorAll("[data-whisper]").forEach((el) => {
+    el.addEventListener("click", () => retryWhisper(el.getAttribute("data-whisper")));
   });
   songsEl.querySelectorAll("[data-align]").forEach((el) => {
     el.addEventListener("click", () => {

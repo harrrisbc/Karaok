@@ -30,7 +30,7 @@
           <option value="large-v3">large-v3（最準，第一次要 download）</option>
         </select>
       </label>
-      <p class="hint">一次只可以跑 <strong>一個</strong> job（GPU 共用）。Import 會開新 pack；舊歌想換 model 用 <strong>Analyze</strong>。有正確歌詞就撳 <strong>Align lyrics</strong> 上傳 txt（一行一句）——會對 vocals 寫時間入 <code>lyrics.json</code>。</p>
+      <p class="hint">一次只可以跑 <strong>一個</strong> job（GPU 共用）。Import 會開新 pack；舊歌想換 model 用 <strong>Analyze</strong>（先試 LRCLIB）。LRCLIB 唔啱就撳 <strong>Retry Whisper</strong> 強制 ASR。有正確歌詞就撳 <strong>Align lyrics</strong> 上傳 txt（一行一句）。</p>
       <label>Singer name
         <input type="text" id="singer" placeholder="演唱者（Prep 寫入 pack，Live 都可以改）" maxlength="120" />
       </label>
@@ -59,6 +59,6 @@
       <ul id="songs"></ul>
     </section>
   </main>
-  <script src="/web/prep.js?v=8"></script>
+  <script src="/web/prep.js?v=10"></script>
 </body>
 </html>

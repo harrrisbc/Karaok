@@ -11,9 +11,9 @@ from engine.lyrics import (
     _pick_model,
     _quiet_stdio,
     _silence_tqdm,
+    get_cached_model,
     normalize_lang,
     normalize_whisper_model,
-    release_cuda,
 )
 from engine.pack import SongPack
 
@@ -91,6 +91,19 @@ def _segments_from_stable_result(result: Any, user_lines: list[str]) -> list[dic
     raise RuntimeError("stable-ts align 冇產出 segments")
 
 
+def _words_from_stable_result(result: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for seg in getattr(result, "segments", None) or []:
+        for w in getattr(seg, "words", None) or []:
+            text = (getattr(w, "word", None) or getattr(w, "text", None) or "").strip()
+            if not text:
+                continue
+            start = float(getattr(w, "start", 0.0) or 0.0)
+            end = float(getattr(w, "end", start) or start)
+            out.append({"t": round(start, 3), "end": round(max(start, end), 3), "text": text})
+    return out
+
+
 def _timing_from_pack(pack: SongPack) -> list[dict[str, Any]]:
     if not pack.lyrics.exists():
         return []
@@ -103,6 +116,43 @@ def _timing_from_pack(pack: SongPack) -> list[dict[str, Any]]:
     ]
 
 
+def write_lyrics_payload(
+    pack: SongPack,
+    *,
+    lines: list[dict[str, Any]],
+    words: list[dict[str, Any]] | None = None,
+    method: str,
+    source: str,
+    lang_key: str,
+    whisper_language: str,
+    model_name: str | None = None,
+    device: str | None = None,
+    locked: bool = False,
+    extra: dict[str, Any] | None = None,
+) -> dict:
+    text = "".join(ln.get("text") or "" for ln in lines)
+    if lang_key == "english":
+        text = " ".join((ln.get("text") or "").strip() for ln in lines)
+    payload: dict[str, Any] = {
+        "schema_version": 1,
+        "method": method,
+        "model": model_name,
+        "device": device,
+        "lang_preset": lang_key,
+        "whisper_language": whisper_language,
+        "language": whisper_language,
+        "text": text,
+        "lines": [{"t": ln["t"], "end": ln["end"], "text": ln["text"]} for ln in lines],
+        "words": words or [],
+        "source": source,
+        "locked": bool(locked),
+    }
+    if extra:
+        payload.update(extra)
+    pack.lyrics.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return payload
+
+
 def align_lyrics_from_text(
     pack: SongPack,
     text: str,
@@ -110,6 +160,10 @@ def align_lyrics_from_text(
     language: str | None = None,
     model_name: str | None = None,
     prefer_remap: bool = False,
+    source: str = "user-txt",
+    locked: bool = True,
+    extra: dict[str, Any] | None = None,
+    method_override: str | None = None,
 ) -> dict:
     """
     Force-align a user lyric txt (one phrase per line) onto vocals.wav.
@@ -130,15 +184,16 @@ def align_lyrics_from_text(
     model_name = _pick_model(normalize_whisper_model(model_name), preset["min_model"])
     whisper_language = preset["whisper_language"]
     device = _device()
-    method = "stable-ts-align"
+    method = method_override or "stable-ts-align"
     timed: list[dict[str, Any]]
+    words: list[dict[str, Any]] = []
 
     if prefer_remap:
         existing = _timing_from_pack(pack)
         if not existing:
             raise RuntimeError("prefer_remap 但 pack 未有 lyrics timing — 先 Analyze 或者關 prefer_remap")
         timed = remap_lines_to_timing(user_lines, existing)
-        method = "remap-existing-timing"
+        method = method_override or "remap-existing-timing"
     else:
         try:
             import stable_whisper
@@ -150,12 +205,11 @@ def align_lyrics_from_text(
                     " pip install stable-ts 或者先 Analyze 一次再 Align。"
                 ) from exc
             timed = remap_lines_to_timing(user_lines, existing)
-            method = "remap-existing-timing"
+            method = method_override or "remap-existing-timing"
         else:
-            model = None
             try:
                 with _silence_tqdm():
-                    model = stable_whisper.load_model(model_name, device=device)
+                    model = get_cached_model(model_name, device, kind="stable")
                 script = "\n".join(user_lines)
                 with _quiet_stdio():
                     result = model.align(
@@ -168,31 +222,125 @@ def align_lyrics_from_text(
                 if result is None:
                     raise RuntimeError("stable-ts align 失敗（result=None）")
                 timed = _segments_from_stable_result(result, user_lines)
+                words = _words_from_stable_result(result)
             except Exception:
                 (pack.root / "lyrics.align.error.txt").write_text(
                     traceback.format_exc(), encoding="utf-8"
                 )
                 raise
-            finally:
-                del model
-                release_cuda()
 
-    words: list[dict[str, Any]] = []
-    payload = {
-        "schema_version": 1,
-        "method": method,
-        "model": model_name,
-        "device": device,
-        "lang_preset": lang_key,
-        "whisper_language": whisper_language,
-        "language": whisper_language,
-        "text": "".join(user_lines) if lang_key != "english" else " ".join(user_lines),
-        "lines": timed,
-        "words": words,
-        "source": "user-txt",
-    }
-    pack.lyrics.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    payload = write_lyrics_payload(
+        pack,
+        lines=timed,
+        words=words,
+        method=method,
+        source=source,
+        lang_key=lang_key,
+        whisper_language=whisper_language,
+        model_name=model_name,
+        device=device,
+        locked=locked,
+        extra=extra,
+    )
     err = pack.root / "lyrics.align.error.txt"
     if err.exists():
         err.unlink()
     return payload
+
+
+MAX_LRC_OFFSET_SEC = 45.0
+MIN_LRC_OFFSET_SEC = 0.4
+
+
+def lrc_offset_for_pack(pack: SongPack, lines: list[dict[str, Any]]) -> float:
+    """Seconds to shift LRC so its first line meets real vocal onset.
+
+    LRCLIB timings come from someone else's release. Even a duration match can
+    sit on a different intro length, which puts every line ahead of / behind the
+    music. Anchor on our own vocals instead of trusting the LRC clock.
+    """
+    if not lines or not pack.vocals.exists():
+        return 0.0
+    try:
+        from engine.lyrics import _load_vocals_16k, vocal_onset_sec
+
+        onset = vocal_onset_sec(_load_vocals_16k(pack.vocals))
+    except Exception:
+        return 0.0
+    if onset <= 0:
+        return 0.0
+    first = float(lines[0].get("t") or 0.0)
+    delta = onset - first
+    if abs(delta) < MIN_LRC_OFFSET_SEC or abs(delta) > MAX_LRC_OFFSET_SEC:
+        return 0.0
+    return round(delta, 3)
+
+
+def apply_lrc_to_pack(
+    pack: SongPack,
+    lrc_text: str,
+    *,
+    mode: str = "align",
+    language: str | None = None,
+    model_name: str | None = None,
+    source: str = "lrclib",
+    locked: bool = False,
+    extra: dict[str, Any] | None = None,
+) -> dict:
+    from engine.lrc import normalize_lrc
+
+    meta = pack.load_meta()
+    lang_key = normalize_lang(language or meta.lyrics_lang)
+    norm = normalize_lrc(lrc_text, lang=lang_key, title=meta.title or "")
+    lines = norm["lines"]
+    if not lines:
+        raise ValueError("LRC 冇可用歌詞行（過濾後係空）")
+    extra = dict(extra or {})
+    if "lrclib" in extra and extra["lrclib"] is not None:
+        extra["lrclib"] = {**extra["lrclib"], "converted": extra["lrclib"].get("converted") or norm.get("converted")}
+    else:
+        extra["lrclib"] = {
+            "id": None,
+            "track_name": meta.title,
+            "artist_name": "",
+            "album_name": "",
+            "duration": None,
+            "matched_by": "paste",
+            "converted": norm.get("converted"),
+        }
+
+    if mode == "trust-lrc":
+        from engine.lrc import shift_lines
+
+        offset = lrc_offset_for_pack(pack, lines)
+        if offset:
+            lines = shift_lines(lines, offset)
+        words: list[dict[str, Any]] = []
+        for ln in lines:
+            words.extend(ln.get("words") or [])
+        preset = LANG_PRESETS[lang_key]
+        extra["lrc_offset_sec"] = offset
+        return write_lyrics_payload(
+            pack,
+            lines=lines,
+            words=words,
+            method="lrclib-direct",
+            source=source,
+            lang_key=lang_key,
+            whisper_language=preset["whisper_language"],
+            model_name=model_name,
+            device=_device(),
+            locked=locked,
+            extra=extra,
+        )
+
+    return align_lyrics_from_text(
+        pack,
+        norm["txt"],
+        language=lang_key,
+        model_name=model_name,
+        source=source,
+        locked=locked,
+        extra=extra,
+        method_override="lrclib-align",
+    )

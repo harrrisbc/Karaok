@@ -51,7 +51,72 @@ def note_at(notes: list[dict], t: float) -> dict | None:
     return best
 
 
-def line_at(lines: list[dict], t: float) -> tuple[dict | None, dict | None, float]:
+def _linear_line_progress(line: dict, t: float) -> float:
+    start = float(line["t"])
+    end = float(line.get("end") or start)
+    return max(0.0, min(1.0, (t - start) / max(1e-6, end - start)))
+
+
+def _compact_text(text: object) -> str:
+    return "".join(str(text or "").split())
+
+
+def _line_words(line: dict, words: list[dict] | None) -> list[dict]:
+    """Prefer line-owned words; otherwise select pack words by their midpoint."""
+    candidates = list(line.get("words") or [])
+    if not candidates and words:
+        start = float(line["t"]) - 0.05
+        end = float(line.get("end") or line["t"]) + 0.05
+        candidates = [
+            word
+            for word in words
+            if start <= (float(word.get("t", 0.0)) + float(word.get("end", word.get("t", 0.0)))) / 2 <= end
+        ]
+
+    timed = []
+    for word in candidates:
+        text = str(word.get("text") or word.get("word") or "").strip()
+        try:
+            start = float(word["t"] if "t" in word else word["start"])
+            end = float(word.get("end", word.get("end", start)))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if text and end >= start:
+            timed.append({"t": start, "end": end, "text": text})
+    return sorted(timed, key=lambda word: (word["t"], word["end"]))
+
+
+def progress_in_line(line: dict, t: float, words: list[dict] | None = None) -> float:
+    """Return a 0–1 lyric sweep, using word timestamps when they cover the line."""
+    timed = _line_words(line, words)
+    line_text = _compact_text(line.get("text"))
+    token_text = "".join(_compact_text(word["text"]) for word in timed)
+    if len(timed) < 2 or not line_text or token_text != line_text:
+        return _linear_line_progress(line, t)
+
+    weights = [max(1, len(_compact_text(word["text"]))) for word in timed]
+    total = sum(weights)
+    if t < timed[0]["t"]:
+        return 0.0
+
+    completed = 0
+    for word, weight in zip(timed, weights):
+        start, end = word["t"], word["end"]
+        if t < start:
+            # A timing gap holds at the previous word boundary.
+            return completed / total
+        if t < end:
+            fraction = (t - start) / max(1e-6, end - start)
+            return max(0.0, min(1.0, (completed + weight * fraction) / total))
+        completed += weight
+    return 1.0
+
+
+def line_at(
+    lines: list[dict],
+    t: float,
+    words: list[dict] | None = None,
+) -> tuple[dict | None, dict | None, float]:
     current = None
     nxt = None
     progress = 0.0
@@ -61,8 +126,7 @@ def line_at(lines: list[dict], t: float) -> tuple[dict | None, dict | None, floa
         if start <= t <= end:
             current = line
             nxt = lines[i + 1] if i + 1 < len(lines) else None
-            dur = max(1e-6, end - start)
-            progress = (t - start) / dur
+            progress = progress_in_line(line, t, words)
             break
         if t < start:
             nxt = line
@@ -189,6 +253,7 @@ def score_snapshot(
     title: str,
     singer: str = "",
     dt: float = 0.0,
+    words: list[dict] | None = None,
 ) -> dict[str, Any]:
     align_t = align_time(playback_pos, output_ms, input_ms, trim_ms)
     note = note_at(notes, align_t)
@@ -200,7 +265,7 @@ def score_snapshot(
     skill.update(voiced=voiced and cents is not None, cents=cents, badges=flags)
     hp.tick(voiced=voiced and cents is not None, cents=cents, badges=flags, dt=dt)
     meters = skill.as_dict()
-    cur, nxt, progress = line_at(lines, align_t)
+    cur, nxt, progress = line_at(lines, align_t, words)
     remaining = max(0.0, duration - playback_pos)
     in_tune = abs(cents) < 35 if cents is not None else False
     score = (meters["pitch"] * 0.5 + meters["rhythm"] * 0.3 + meters["stable"] * 0.2)

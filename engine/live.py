@@ -71,6 +71,7 @@ class LiveSession:
         self.duration = 0.0
         self.notes: list[dict] = []
         self.lines: list[dict] = []
+        self.words: list[dict] = []
         self.trim_ms = 0.0
         self.vocal_mix = 0.0
         self.input_ms = 0.0
@@ -88,11 +89,13 @@ class LiveSession:
         self._skill = RunningSkill()
         self._hp = HealthPoints()
         self._sr = TARGET_SR
+        self.calibrating = False
 
     def status(self) -> dict[str, Any]:
         with self._lock:
             return {
                 "running": self.running,
+                "calibrating": self.calibrating,
                 "failed": self.failed,
                 "pack_id": self.pack_id,
                 "title": self.title,
@@ -136,6 +139,33 @@ class LiveSession:
         with self._lock:
             self.vocal_mix = float(max(0.0, min(1.0, mix)))
 
+    def calibrate(
+        self,
+        *,
+        input_device: int | None,
+        output_device: int | None,
+        input_channel: int = 0,
+    ) -> dict[str, Any]:
+        """Measure click-to-mic loopback while the session is idle."""
+        with self._lock:
+            if self.running:
+                return {"ok": False, "error": "busy", "message": "Stop the live take before calibrating."}
+            if self.calibrating:
+                return {"ok": False, "error": "busy", "message": "Calibration is already running."}
+            self.calibrating = True
+        try:
+            from engine.latency_calibrate import measure_loop_latency_ms
+
+            return measure_loop_latency_ms(
+                input_device=input_device,
+                output_device=output_device,
+                input_channel=input_channel,
+                sr=TARGET_SR,
+            )
+        finally:
+            with self._lock:
+                self.calibrating = False
+
     def start(
         self,
         pack_id: str,
@@ -148,6 +178,9 @@ class LiveSession:
         vocal_mix: float = 0.0,
     ) -> dict[str, Any]:
         self.stop()
+        from engine.lyrics import drop_model_cache
+
+        drop_model_cache()
         pack = get_pack(pack_id)
         if not pack.instrumental.exists():
             raise FileNotFoundError("instrumental.wav missing")
@@ -181,6 +214,7 @@ class LiveSession:
             self.failed = False
             self.notes = list(melody.get("notes") or [])
             self.lines = list(lyrics.get("lines") or [])
+            self.words = list(lyrics.get("words") or [])
             self.duration = float(len(audio) / TARGET_SR)
             self.trim_ms = float(trim_ms)
             self.vocal_mix = float(max(0.0, min(1.0, vocal_mix)))
@@ -332,6 +366,7 @@ class LiveSession:
                 voiced=voiced,
                 notes=self.notes,
                 lines=self.lines,
+                words=self.words,
                 skill=self._skill,
                 hp=self._hp,
                 dt=n / float(self._sr),

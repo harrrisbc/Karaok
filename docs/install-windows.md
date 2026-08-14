@@ -93,6 +93,7 @@ Only ingest songs you have the right to use.
 2. Start a pack → read **FOH VOCAL DELAY** (`output_ms`).
 3. Delay FOH vocal by that ms; foldback / direct vocal stays 0 ms.
 4. Align trim on `/live` is scoring-only — do not copy it to the desk.
+5. Prep **Analyze** and Live **Start** can run together (different packs). Only one Prep job at a time. GPU load during Demucs/Whisper may still hitch playback.
 
 More: [phase-3-live-scoring](intent/phase-3-live-scoring.md), [phase-4-overlay](intent/phase-4-overlay.md).
 

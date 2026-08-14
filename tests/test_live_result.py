@@ -61,3 +61,10 @@ def test_stop_aborts_without_clear():
     assert sess.cleared is False
     assert sess.failed is False
     assert sess.latest == {"type": "idle"}
+
+
+def test_start_does_not_drop_model_cache():
+    import inspect
+
+    src = inspect.getsource(LiveSession.start)
+    assert "drop_model_cache" not in src

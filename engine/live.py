@@ -244,12 +244,6 @@ class LiveSession:
         vocal_mix: float = 0.0,
     ) -> dict[str, Any]:
         self.stop()
-        try:
-            from engine.lyrics import drop_model_cache
-
-            drop_model_cache()
-        except ImportError:
-            pass
         pack = get_pack(pack_id)
         if not pack.instrumental.exists():
             raise FileNotFoundError("instrumental.wav missing")

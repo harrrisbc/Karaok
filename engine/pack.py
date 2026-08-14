@@ -117,6 +117,10 @@ class SongPack:
         return self.root / "instrumental.wav"
 
     @property
+    def mv(self) -> Path:
+        return self.root / "mv.mp4"
+
+    @property
     def melody(self) -> Path:
         return self.root / "melody.json"
 
@@ -181,6 +185,7 @@ class SongPack:
         data = meta.to_json()
         data["has_vocals"] = self.vocals.exists()
         data["has_instrumental"] = self.instrumental.exists()
+        data["has_mv"] = self.mv.exists()
         data["has_melody"] = self.melody.exists()
         data["has_lyrics"] = self.lyrics.exists()
         data.update(self.lyrics_provenance())

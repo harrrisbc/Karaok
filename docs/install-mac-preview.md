@@ -69,7 +69,7 @@ Stop with **Ctrl+C** in the Terminal.
 
 - Control: http://127.0.0.1:8000/live  
 - Overlay (window preview): http://127.0.0.1:8000/show?preview=1  
-- Overlay (OBS 1920×1080): http://127.0.0.1:8000/show  
+- Show (1920×1080): http://127.0.0.1:8000/show  
 
 ### Optional env
 

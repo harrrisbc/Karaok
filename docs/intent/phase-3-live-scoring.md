@@ -23,7 +23,7 @@ Success for this phase:
 | Performer | Sings into interface mic. Hears own voice from desk direct / foldback (undelayed). Hears track from our PC → interface → speakers / wedges. |
 | This app | Plays instrumental only. Records mic for scoring. Shows overlay + latency readout. |
 | Audio team | Console: split mic (direct to PA/foldback + send into PC). Delay **FOH vocal bus** by the number we display. Do **not** delay foldback / direct monitor. |
-| Video | OBS captures `/show` as before. Unchanged. |
+| Video | `/show` plays pack `mv.mp4` or a capture-card/camera feed. Instrumental audio stays PortAudio (video muted). OBS optional (`?transparent=1`). |
 
 ## Signal flow
 
@@ -148,7 +148,7 @@ Sample rate: lock interface and app to the same rate (48 kHz preferred). Mismatc
 - Overlay layout matching the reference graphic
 - Song picker + start/stop show ops (Phase 5)
 - 1:1 DAM scores
-- Camera / OBS switching
+- Multi-camera switcher / OBS scene switching
 
 ## Implementation sketch (for rapid-prototyper)
 

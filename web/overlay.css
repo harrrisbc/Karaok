@@ -30,22 +30,46 @@ body.transparent { background: transparent; }
   position: relative;
   width: 1920px;
   height: 1080px;
+  background: #07070d;
+}
+
+.stage-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+  pointer-events: none;
+  background: #07070d;
+}
+
+.stage-bg[hidden] {
+  display: none;
+}
+
+body.transparent #stage {
   background: transparent;
 }
 
-/* Non-transparent preview: soft vignette only — center stays open for “camera” feel */
+body.transparent .stage-bg {
+  display: none !important;
+}
+
+/* Non-transparent: slight vignette over MV/camera so HUD stays readable */
 body:not(.transparent) #stage::before {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(900px 520px at 55% 35%, rgba(40, 20, 70, 0.35) 0%, transparent 70%),
-    linear-gradient(180deg, #0a0814 0%, #07070d 100%);
-  z-index: 0;
+    radial-gradient(900px 520px at 55% 35%, rgba(10, 6, 22, 0.18) 0%, transparent 70%),
+    linear-gradient(180deg, rgba(7, 7, 13, 0.22) 0%, rgba(7, 7, 13, 0.4) 100%);
+  z-index: 1;
 }
 
-#stage > * { z-index: 1; }
+#stage > * { z-index: 2; }
+#stage > .stage-bg { z-index: 0; }
 
 html.preview-fit,
 html.preview-fit body {

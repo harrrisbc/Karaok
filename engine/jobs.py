@@ -159,6 +159,10 @@ def start_youtube_import(
         job.status = "running"
         pack = import_youtube(url, lyrics_lang=lang, singer=singer)
         job.pack_id = pack.load_meta().id
+        if pack.mv.exists():
+            job.log.append("mv.mp4 ready")
+        else:
+            job.log.append("mv.mp4 skip — audio-only pack")
         _prep_full(job, pack, lang, whisper_model)
 
     return runner.submit("youtube", work)

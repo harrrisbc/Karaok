@@ -42,6 +42,9 @@ class FakeSession:
         self.vocal_mix = 0.0
         self.difficulty = "normal"
         self.healed = None
+        self.bg_mode = "none"
+        self.bg_camera_id = ""
+        self.has_mv = False
 
     def start(self, pack_id, **kwargs):
         self.running = True
@@ -64,6 +67,12 @@ class FakeSession:
             "trim_ms": self.trim_ms,
             "vocal_mix": self.vocal_mix,
             "difficulty": self.difficulty,
+            "bg": {
+                "mode": self.bg_mode,
+                "camera_id": self.bg_camera_id,
+                "has_mv": self.has_mv,
+                "pack_id": self.pack_id,
+            },
             "frame": {"type": "idle"},
         }
 
@@ -79,6 +88,20 @@ class FakeSession:
     def heal_hp(self, amount=10.0):
         self.healed = {"pitch": 100.0, "rhythm": 100.0}
         return self.healed
+
+    def set_bg(self, mode, camera_id=None):
+        key = (mode or "none").strip().lower()
+        if key not in {"mv", "camera", "none"}:
+            raise ValueError(f"unknown bg mode: {mode}")
+        self.bg_mode = key
+        if camera_id is not None:
+            self.bg_camera_id = str(camera_id)
+        return {
+            "mode": self.bg_mode,
+            "camera_id": self.bg_camera_id,
+            "has_mv": self.has_mv,
+            "pack_id": self.pack_id,
+        }
 
     def calibrate(self, **kwargs):
         return {"ok": True, "proposed_trim_ms": 12.0}
@@ -191,6 +214,45 @@ def test_preview_live_api_contract(tmp_path, monkeypatch):
 
     missing = client.post("/api/live/start", json={"pack_id": "no-such-pack"})
     assert missing.status_code == 404
+
+    bg = client.post("/api/live/bg", json={"mode": "camera", "camera_id": "dev-1"})
+    assert bg.status_code == 200
+    assert bg.json()["bg"]["mode"] == "camera"
+    assert bg.json()["bg"]["camera_id"] == "dev-1"
+
+
+def test_pack_mv_route_404_and_200(tmp_path):
+    configure_songs_dir(str(tmp_path))
+    pack = create_pack("MV Demo", source="copy")
+    pack_id = pack.load_meta().id
+    from server.preview_app import app
+
+    client = TestClient(app)
+    missing = client.get(f"/api/songs/{pack_id}/mv")
+    assert missing.status_code == 404
+    listed = client.get("/api/songs").json()["songs"]
+    row = next(s for s in listed if s["id"] == pack_id)
+    assert row["has_mv"] is False
+
+    pack.mv.write_bytes(b"fake-mp4")
+    ok = client.get(f"/api/songs/{pack_id}/mv")
+    assert ok.status_code == 200
+    assert ok.headers["content-type"].startswith("video/mp4")
+    assert ok.content == b"fake-mp4"
+
+    uploaded = client.post(
+        f"/api/songs/{pack_id}/mv",
+        files={"file": ("clip.mp4", b"new-mp4", "video/mp4")},
+    )
+    assert uploaded.status_code == 200
+    assert uploaded.json()["has_mv"] is True
+    assert pack.mv.read_bytes() == b"new-mp4"
+
+    bad = client.post(
+        f"/api/songs/{pack_id}/mv",
+        files={"file": ("clip.mov", b"x", "video/quicktime")},
+    )
+    assert bad.status_code == 404 or bad.status_code == 400
 
 
 def test_full_app_keeps_prep_and_live_routes():

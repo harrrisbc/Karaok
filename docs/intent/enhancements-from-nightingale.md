@@ -236,6 +236,6 @@ Tag-driven release workflow, `CHANGELOG.md` section per version, draft release t
 ## Deliberately skipped
 
 - Media-server libraries (Plex / Jellyfin / Navidrome) — we import one song at a time.
-- Audio-reactive shader backgrounds and video loops — OBS owns visuals.
+- Audio-reactive shader backgrounds — `/show` uses pack MV or a capture-card/camera instead.
 - Gamepad navigation, in-app updater, Docker images, mobile/TV scaling — app concerns, not show concerns.
 - Bundling Python / ffmpeg / models into one binary — our setup is a dev machine we control.

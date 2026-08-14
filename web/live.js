@@ -8,6 +8,9 @@ const trimVal = document.getElementById("trimVal");
 const vocalMixEl = document.getElementById("vocalMix");
 const vocalMixVal = document.getElementById("vocalMixVal");
 const difficultyEl = document.getElementById("difficulty");
+const bgModeEl = document.getElementById("bgMode");
+const bgCameraEl = document.getElementById("bgCamera");
+const bgCamWrap = document.getElementById("bgCamWrap");
 const diffHint = document.getElementById("diffHint");
 const healBtn = document.getElementById("healHp");
 const fohMs = document.getElementById("fohMs");
@@ -43,6 +46,8 @@ function savePrefs() {
       singer: singerEl.value,
       vocalMix: vocalMixEl.value,
       difficulty: difficultyEl.value,
+      bgMode: bgModeEl.value,
+      bgCamera: bgCameraEl.value,
     }),
   );
 }
@@ -83,8 +88,12 @@ function applyStatus(s) {
     fohMs.textContent = "— ms";
   }
   lat.textContent = s.running
-    ? `input ${Number(s.input_ms).toFixed(1)} ms · output ${Number(s.output_ms).toFixed(1)} ms · trim ${s.trim_ms} · guide ${Math.round((s.vocal_mix || 0) * 100)}% · ${s.difficulty || "normal"} · HP ${s.frame?.hp?.pitch ?? "—"}/${s.frame?.hp?.rhythm ?? "—"}`
+    ? `input ${Number(s.input_ms).toFixed(1)} ms · output ${Number(s.output_ms).toFixed(1)} ms · trim ${s.trim_ms} · guide ${Math.round((s.vocal_mix || 0) * 100)}% · ${s.difficulty || "normal"} · HP ${s.frame?.hp?.pitch ?? "—"}/${s.frame?.hp?.rhythm ?? "—"} · bg ${s.bg?.mode || "none"}`
     : "stopped — pick devices, then Start";
+  if (s.bg?.mode && document.activeElement !== bgModeEl) {
+    if (bgModeEl.value !== s.bg.mode) bgModeEl.value = s.bg.mode;
+    updateBgUi();
+  }
   if (s.difficulty && difficultyEl.value !== s.difficulty) {
     /* keep operator selection unless server reports mid-take change elsewhere */
   }
@@ -126,12 +135,17 @@ async function loadPacks() {
   const ready = data.songs.filter((s) => s.has_instrumental);
   packEl.innerHTML = ready.length
     ? ready
-        .map((s) => `<option value="${s.id}" data-singer="${s.singer || ""}">${s.title} (${s.status})</option>`)
+        .map(
+          (s) =>
+            `<option value="${s.id}" data-singer="${s.singer || ""}" data-has-mv="${s.has_mv ? "1" : "0"}">${s.title} (${s.status})${s.has_mv ? " · MV" : ""}</option>`,
+        )
         .join("")
     : `<option value="">No packs with instrumental</option>`;
   const prefs = loadPrefs();
   if (prefs.pack) packEl.value = prefs.pack;
   fillSingerFromPack(prefs.singer);
+  if (prefs.bgMode) bgModeEl.value = prefs.bgMode;
+  updateBgUi();
 }
 
 function fillSingerFromPack(prefSinger) {
@@ -140,7 +154,64 @@ function fillSingerFromPack(prefSinger) {
   singerEl.value = prefSinger || fromPack;
 }
 
-packEl.addEventListener("change", () => fillSingerFromPack(""));
+packEl.addEventListener("change", () => {
+  fillSingerFromPack("");
+  updateBgUi();
+  pushBg();
+});
+bgModeEl.addEventListener("change", () => pushBg());
+bgCameraEl.addEventListener("change", () => pushBg());
+
+function selectedHasMv() {
+  return packEl.selectedOptions[0]?.getAttribute("data-has-mv") === "1";
+}
+
+function updateBgUi() {
+  const hasMv = selectedHasMv();
+  const mvOpt = bgModeEl.querySelector('option[value="mv"]');
+  if (mvOpt) mvOpt.disabled = !hasMv;
+  if (!hasMv && bgModeEl.value === "mv") bgModeEl.value = "none";
+  bgCamWrap.hidden = bgModeEl.value !== "camera";
+}
+
+async function pushBg() {
+  updateBgUi();
+  savePrefs();
+  try {
+    applyStatus(
+      await jsonFetch("/api/live/bg", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: bgModeEl.value,
+          camera_id: bgCameraEl.value || "",
+        }),
+      }),
+    );
+  } catch {
+    /* idle */
+  }
+}
+
+async function loadCameras() {
+  if (!navigator.mediaDevices?.enumerateDevices) return;
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cams = devices.filter((d) => d.kind === "videoinput");
+    bgCameraEl.innerHTML = cams.length
+      ? cams
+          .map(
+            (d) =>
+              `<option value="${d.deviceId}">${d.label || "Camera"} </option>`,
+          )
+          .join("")
+      : `<option value="">No camera (grant permission on /show)</option>`;
+    const prefs = loadPrefs();
+    if (prefs.bgCamera) bgCameraEl.value = prefs.bgCamera;
+  } catch {
+    bgCameraEl.innerHTML = `<option value="">Camera list unavailable</option>`;
+  }
+}
 
 startBtn.addEventListener("click", async () => {
   savePrefs();
@@ -302,6 +373,7 @@ loadDevices().catch((err) => {
   lat.textContent = String(err);
 });
 loadPacks();
+loadCameras();
 poll();
 jsonFetch("/api/health")
   .then((health) => {

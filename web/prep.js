@@ -64,6 +64,7 @@ function assetsLabel(song) {
   if (song.has_vocals && song.has_instrumental) bits.push("stems");
   if (song.has_melody) bits.push("melody");
   if (song.has_lyrics) bits.push("lyrics");
+  if (song.has_mv) bits.push("mv");
   return bits.length ? bits.join("+") : "empty";
 }
 
@@ -191,11 +192,14 @@ async function loadSongs() {
            <input type="file" accept=".txt,text/plain" data-align-file="${song.id}" hidden />`
         : "";
       const save = `<button type="button" data-save-singer="${song.id}" ${busy ? "disabled" : ""}>Save singer</button>`;
+      const mvBtn = `<button type="button" data-mv="${song.id}" ${busy ? "disabled" : ""}>${song.has_mv ? "Replace MV" : "Attach MV"}</button>
+           <input type="file" accept="video/mp4,.mp4" data-mv-file="${song.id}" hidden />`;
       return `<li>
         <span>${song.title}</span>
         <span class="status">${song.status} · ${assetsLabel(song)} · ${lyricsLabel(song)} · ${lang}${song.singer ? ` · ${song.singer}` : ""}</span>
         ${singer}
         ${save}
+        ${mvBtn}
         ${btn}
         ${whisperBtn}
         ${align}
@@ -237,6 +241,30 @@ async function loadSongs() {
         body: JSON.stringify({ singer: (input?.value || "").trim() }),
       });
       loadSongs();
+    });
+  });
+  songsEl.querySelectorAll("[data-mv]").forEach((el) => {
+    el.addEventListener("click", () => {
+      if (busy) return;
+      const id = el.getAttribute("data-mv");
+      songsEl.querySelector(`[data-mv-file="${id}"]`)?.click();
+    });
+  });
+  songsEl.querySelectorAll("[data-mv-file]").forEach((el) => {
+    el.addEventListener("change", async () => {
+      const id = el.getAttribute("data-mv-file");
+      const file = el.files?.[0];
+      el.value = "";
+      if (!file || !id) return;
+      const body = new FormData();
+      body.append("file", file);
+      try {
+        await jsonFetch(`/api/songs/${id}/mv`, { method: "POST", body });
+        loadSongs();
+      } catch (err) {
+        jobEl.hidden = false;
+        jobEl.textContent = String(err.message || err);
+      }
     });
   });
 }

@@ -43,10 +43,11 @@ Or:
 |-----|------|
 | http://127.0.0.1:8000/prep | Prep studio — import / analyze |
 | http://127.0.0.1:8000/live | Operator desk — Start/Stop, devices, trim |
-| http://127.0.0.1:8000/show | OBS overlay (1920×1080 Browser Source) |
+| http://127.0.0.1:8000/show | Show surface (1920×1080) — MV or camera background |
 | http://127.0.0.1:8000/show?preview=1 | Overlay scaled to window |
+| http://127.0.0.1:8000/show?transparent=1 | Transparent HUD for OBS composite |
 
-Karaok must run on the **audio PC** (mic + instrumental). Remote browsers can open `/live` / `/show` but cannot move PortAudio.
+Karaok must run on the **audio PC** (mic + instrumental). Remote browsers can open `/live` / `/show` but cannot move PortAudio. Camera / capture card must be granted on the machine that displays `/show`.
 
 ### LAN / two-machine show
 
@@ -58,7 +59,7 @@ $env:KARAOK_HOST = "0.0.0.0"
 Allow inbound TCP **8000** on a trusted venue LAN only (no auth).
 
 1. Audio PC: run server, operate `/live`
-2. Video PC OBS: Browser Source `http://<audio-pc-ip>:8000/show`
+2. Show display: full-screen `http://<audio-pc-ip>:8000/show` (MV or capture card)
 3. Stage tablet/laptop: `http://<audio-pc-ip>:8000/live`
 
 ## 4. Song packs
@@ -73,6 +74,7 @@ songs/
     vocals.wav      # optional
     melody.json     # optional
     lyrics.json     # optional
+    mv.mp4          # optional show background (YouTube import or Attach MV)
 ```
 
 CLI:

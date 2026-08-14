@@ -94,6 +94,9 @@ class LiveSession:
         self.input_channel = 0
         self.playback_pos = 0.0
         self.latest: dict[str, Any] = {"type": "idle"}
+        self.has_mv = False
+        self.bg_mode = "none"
+        self.bg_camera_id = ""
         self._streams: list[Any] = []
         self._cursor = 0
         self._instrumental: np.ndarray | None = None
@@ -131,8 +134,29 @@ class LiveSession:
                 "input_ms": round(self.input_ms, 1),
                 "output_ms": round(self.output_ms, 1),
                 "foh_vocal_delay_ms": round(self.output_ms, 1),
+                "bg": self._bg_dict_unlocked(),
                 "frame": self.latest,
             }
+
+    def _bg_dict_unlocked(self) -> dict[str, Any]:
+        return {
+            "mode": self.bg_mode,
+            "camera_id": self.bg_camera_id,
+            "has_mv": self.has_mv,
+            "pack_id": self.pack_id,
+        }
+
+    def set_bg(self, mode: str, camera_id: str | None = None) -> dict[str, Any]:
+        key = (mode or "none").strip().lower()
+        if key not in {"mv", "camera", "none"}:
+            raise ValueError(f"unknown bg mode: {mode}")
+        with self._lock:
+            if key == "mv" and self.pack_id and not self.has_mv:
+                key = "none"
+            self.bg_mode = key
+            if camera_id is not None:
+                self.bg_camera_id = str(camera_id)
+            return self._bg_dict_unlocked()
 
     def chart(self) -> dict[str, Any]:
         with self._lock:
@@ -142,6 +166,8 @@ class LiveSession:
                 "title": self.title,
                 "singer": self.singer,
                 "duration": self.duration,
+                "has_mv": self.has_mv,
+                "bg": self._bg_dict_unlocked(),
                 "notes": [
                     {
                         "t": n["t"],
@@ -269,6 +295,11 @@ class LiveSession:
             self._cursor = 0
             self._instrumental = audio
             self._vocals = vocals
+            self.has_mv = pack.mv.exists()
+            if self.has_mv and self.bg_mode in {"none", "mv"}:
+                self.bg_mode = "mv"
+            elif self.bg_mode == "mv" and not self.has_mv:
+                self.bg_mode = "none"
             self._skill = RunningSkill()
             self._hp = HealthPoints(
                 cents_limit=self.cents_limit,

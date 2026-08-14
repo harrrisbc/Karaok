@@ -12,6 +12,138 @@ if (preview) {
 }
 
 const $ = (id) => document.getElementById(id);
+const MV_DRIFT_SEC = 0.1;
+let bgMode = params.get("bg") || "none";
+let bgPackId = "";
+let bgCameraId = "";
+let cameraStarting = false;
+
+function mvNeedsSeek(currentTime, playbackT, threshold = MV_DRIFT_SEC) {
+  if (playbackT == null || !Number.isFinite(playbackT) || !Number.isFinite(currentTime)) {
+    return false;
+  }
+  return Math.abs(currentTime - playbackT) > threshold;
+}
+
+function stopCamera() {
+  const el = $("bgCamera");
+  const stream = el?.srcObject;
+  if (stream && typeof stream.getTracks === "function") {
+    stream.getTracks().forEach((t) => t.stop());
+  }
+  if (el) {
+    el.srcObject = null;
+    el.hidden = true;
+  }
+}
+
+function pauseMv() {
+  const v = $("bgVideo");
+  if (!v) return;
+  v.pause();
+}
+
+function hideBgLayers() {
+  const mv = $("bgVideo");
+  const cam = $("bgCamera");
+  if (mv) mv.hidden = true;
+  if (cam) cam.hidden = true;
+}
+
+function loadMv(packId) {
+  const v = $("bgVideo");
+  if (!v || !packId) return;
+  const url = `/api/songs/${encodeURIComponent(packId)}/mv`;
+  if (v.dataset.pack !== packId) {
+    v.src = url;
+    v.dataset.pack = packId;
+    v.load();
+  }
+}
+
+async function ensureCamera(deviceId) {
+  const el = $("bgCamera");
+  if (!el || !navigator.mediaDevices?.getUserMedia) return;
+  if (el.srcObject && bgCameraId === (deviceId || "") && !el.hidden) return;
+  if (cameraStarting) return;
+  cameraStarting = true;
+  stopCamera();
+  const video = deviceId ? { deviceId: { exact: deviceId } } : true;
+  try {
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+    } catch {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    }
+    el.srcObject = stream;
+    el.muted = true;
+    el.hidden = false;
+    bgCameraId = deviceId || "";
+    await el.play().catch(() => {});
+  } catch {
+    el.hidden = true;
+  } finally {
+    cameraStarting = false;
+  }
+}
+
+function syncMvClock(playbackT, running) {
+  const v = $("bgVideo");
+  if (!v || bgMode !== "mv" || v.hidden) return;
+  if (!running) {
+    pauseMv();
+    return;
+  }
+  const play = v.play();
+  if (play) play.catch(() => {});
+  if (mvNeedsSeek(v.currentTime, playbackT)) {
+    try {
+      v.currentTime = playbackT;
+    } catch {
+      /* not seekable yet */
+    }
+  }
+}
+
+async function applyBg(bg, running) {
+  if (document.body.classList.contains("transparent")) {
+    hideBgLayers();
+    stopCamera();
+    pauseMv();
+    bgMode = "none";
+    return;
+  }
+  const mode = (bg && bg.mode) || "none";
+  const packId = (bg && bg.pack_id) || bgPackId;
+  const cameraId = (bg && bg.camera_id) || "";
+  bgMode = mode;
+  if (packId) bgPackId = packId;
+
+  const mv = $("bgVideo");
+  const cam = $("bgCamera");
+  if (mode === "mv" && (bg?.has_mv !== false) && packId) {
+    stopCamera();
+    if (cam) cam.hidden = true;
+    loadMv(packId);
+    if (mv) mv.hidden = false;
+    if (running) {
+      mv?.play()?.catch(() => {});
+    } else {
+      pauseMv();
+    }
+    return;
+  }
+  if (mode === "camera") {
+    pauseMv();
+    if (mv) mv.hidden = true;
+    await ensureCamera(cameraId);
+    return;
+  }
+  pauseMv();
+  stopCamera();
+  hideBgLayers();
+}
 
 const NOW_X = 118; // matches CSS .now-line left
 const LANE_H = 148;
@@ -246,6 +378,11 @@ function applyState(state) {
   if (state.stable != null) setStable(state.stable);
   setFail(Boolean(state.failed), state.fail_reason);
   if (state.remaining != null) setTimer(state.remaining);
+  if (state.bg) applyBg(state.bg, Boolean(state.running) && !state.failed && !state.cleared);
+  const playbackT = state.playback_t;
+  if (playbackT != null) {
+    syncMvClock(playbackT, Boolean(state.running) && !state.failed);
+  }
   if (state.nowSec != null) {
     gradeNotes(state.nowSec, state);
     syncNotes(state.nowSec);
@@ -254,6 +391,8 @@ function applyState(state) {
 
 window.KaraokOverlay = {
   applyState,
+  applyBg,
+  mvNeedsSeek,
   setBadges,
   setPitch,
   setHP,
@@ -351,15 +490,21 @@ if (!preview) {
       setHP(100, 100);
       setFail(false);
       setSuccess(null);
+      if (msg.pack_id) bgPackId = msg.pack_id;
+      applyBg(msg.bg || { mode: "mv", pack_id: msg.pack_id, has_mv: msg.has_mv }, true);
       return;
     }
     if (msg.type === "idle") {
       setFail(false);
       setSuccess(null);
+      applyBg(msg.bg || { mode: bgMode, pack_id: bgPackId }, false);
+      pauseMv();
       return;
     }
     if (msg.type === "result") {
       setSuccess(msg);
+      applyBg(msg.bg || { mode: bgMode, pack_id: bgPackId }, false);
+      pauseMv();
       return;
     }
     if (msg.type === "frame") {

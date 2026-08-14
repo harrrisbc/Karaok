@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -85,6 +85,11 @@ class LiveHealBody(BaseModel):
     amount: float = Field(default=10.0, ge=1.0, le=100.0)
 
 
+class LiveBgBody(BaseModel):
+    mode: str = "none"
+    camera_id: str = ""
+
+
 def register_live_routes(app: FastAPI) -> None:
     @app.get("/show")
     def show() -> HTMLResponse:
@@ -140,6 +145,34 @@ def register_live_routes(app: FastAPI) -> None:
             ],
             "lines": lyrics.get("lines") or [],
         }
+
+    @app.get("/api/songs/{pack_id}/mv")
+    def song_mv(pack_id: str) -> FileResponse:
+        try:
+            pack = get_pack(pack_id)
+        except FileNotFoundError:
+            raise HTTPException(404, "song pack 唔存在") from None
+        if not pack.mv.exists():
+            raise HTTPException(404, "mv.mp4 唔存在") from None
+        return FileResponse(
+            pack.mv,
+            media_type="video/mp4",
+            filename="mv.mp4",
+        )
+
+    @app.post("/api/songs/{pack_id}/mv")
+    async def song_mv_upload(pack_id: str, file: UploadFile = File(...)) -> dict:
+        try:
+            pack = get_pack(pack_id)
+        except FileNotFoundError:
+            raise HTTPException(404, "song pack 唔存在") from None
+        name = (file.filename or "mv.mp4").lower()
+        if not name.endswith(".mp4"):
+            raise HTTPException(400, "請上傳 .mp4") from None
+        pack.mv.write_bytes(await file.read())
+        if session.pack_id == pack_id:
+            session.has_mv = True
+        return pack.public_dict()
 
     @app.get("/api/devices")
     def api_devices() -> dict:
@@ -216,6 +249,14 @@ def register_live_routes(app: FastAPI) -> None:
         status["healed"] = hp
         return status
 
+    @app.post("/api/live/bg")
+    def live_bg(body: LiveBgBody) -> dict:
+        try:
+            session.set_bg(body.mode, body.camera_id)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        return session.status()
+
     @app.get("/api/live/status")
     def live_status() -> dict:
         return session.status()
@@ -233,7 +274,16 @@ def register_live_routes(app: FastAPI) -> None:
                     await ws.send_json(session.chart())
                     sent_chart_for = status["pack_id"]
                 frame = status.get("frame") or {"type": "idle"}
-                await ws.send_json(frame)
+                payload = dict(frame)
+                payload["bg"] = status.get("bg") or {
+                    "mode": "none",
+                    "camera_id": "",
+                    "has_mv": False,
+                    "pack_id": status.get("pack_id"),
+                }
+                if payload.get("type") == "frame":
+                    payload["running"] = bool(status.get("running"))
+                await ws.send_json(payload)
                 await asyncio.sleep(0.04)
         except WebSocketDisconnect:
             return

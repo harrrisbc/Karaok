@@ -3,10 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <title>KARAOK — Show Overlay</title>
-  <link rel="stylesheet" href="/web/overlay.css?v=10" />
+  <link rel="stylesheet" href="/web/overlay.css?v=11" />
 </head>
 <body>
   <div id="stage">
+    <video class="stage-bg" id="bgVideo" muted playsinline preload="auto" hidden></video>
+    <video class="stage-bg" id="bgCamera" muted playsinline hidden></video>
     <aside class="word-card" aria-label="song and singer">
       <p class="word-kicker">NOW</p>
       <p class="word-title" id="songTitle">SELECT SONG</p>
@@ -64,7 +66,7 @@
       <section class="lyric-pill" id="lyrics" aria-label="lyrics">
         <span class="lyric-icon" aria-hidden="true">♪</span>
         <div class="lyric-stack">
-          <p class="lyric-line" id="lyricNow">OBS capture — leave this page open. Control is on /live.</p>
+          <p class="lyric-line" id="lyricNow">Show surface — control is on /live. Pick MV or Camera there.</p>
           <p class="lyric-ghost" id="lyricNext"></p>
         </div>
       </section>
@@ -86,6 +88,6 @@
       </section>
     </div>
   </div>
-  <script src="/web/overlay.js?v=10"></script>
+  <script src="/web/overlay.js?v=11"></script>
 </body>
 </html>

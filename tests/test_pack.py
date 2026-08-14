@@ -35,6 +35,7 @@ def test_create_and_list_pack(tmp_path, monkeypatch):
     assert any(p.root == pack.root for p in list_packs())
     loaded = pack.public_dict()
     assert loaded["has_vocals"] is False
+    assert loaded["has_mv"] is False
     assert loaded["schema_version"] == 1
     assert loaded["singer"] == "Haris"
     assert loaded["lyrics_source"] is None

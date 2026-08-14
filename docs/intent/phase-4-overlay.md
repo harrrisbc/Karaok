@@ -5,11 +5,11 @@ Parent: [karaoke-show.md](karaoke-show.md)
 
 ## Goal
 
-OBS-ready **1920×1080** overlay. Camera/logos stay in OBS. This app is the scoring surface: lyrics, pitch highway, Flat/Late, song+singer card, two HP bars.
+OBS-ready **1920×1080** show surface. Default: opaque `/show` with **MV** or **camera / capture card** behind the HUD. `?transparent=1` keeps the old OBS-composite hole. Scoring HUD: lyrics, pitch highway, Flat/Late, song+singer card, two HP bars.
 
 Success:
 
-- Top-left branding gone (OBS owns logos).
+- Top-left branding gone.
 - Middle left: **song name + singer name**.
 - Bottom left: **音準** and **拍子** HP, each **100**, drain only, no recover.
 - Either bar hitting **0** stops instrumental playback. Overlay shows FAIL.

@@ -1,11 +1,11 @@
 # Karaok
 
-Live karaoke scoring overlay. Camera stays in OBS / other software.
+Live karaoke scoring show. `/show` is a 1920×1080 surface with optional **MV** or **camera / capture-card** background; `/live` is the operator desk. OBS is optional.
 
 | Mode | What you get |
 |------|----------------|
-| **Windows full** | Prep (import → stems → melody/lyrics) + Live + Overlay |
-| **Mac preview** | Live control + Overlay + mic scoring only (load ready packs) |
+| **Windows full** | Prep (import → stems → melody/lyrics + MV) + Live + Show |
+| **Mac preview** | Live control + Show + mic scoring only (load ready packs) |
 
 Only ingest / perform songs you have the right to use.
 
@@ -31,7 +31,7 @@ winget install --id Gyan.FFmpeg -e
 ```
 
 Then open http://127.0.0.1:8000/prep and http://127.0.0.1:8000/live.  
-OBS Browser Source: http://127.0.0.1:8000/show (1920×1080).
+Show: http://127.0.0.1:8000/show (1920×1080). Use `/live` **Show background** to pick MV or camera. `?transparent=1` if you still composite in OBS.
 
 Full steps: [docs/install-windows.md](docs/install-windows.md).
 

@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.demucs/
+separated/
+songs/*
+!songs/.gitkeep
+*.wav
+*.mp3
+*.flac
+*.webm
+*.m4a
+.cursor/
+.DS_Store
+Thumbs.db

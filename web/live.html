@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <title>KARAOK — Live</title>
+  <link rel="stylesheet" href="/web/prep.css" />
+  <link rel="stylesheet" href="/web/live.css" />
+</head>
+<body>
+  <main>
+    <header>
+      <p class="kicker">LIVE ENGINE</p>
+      <h1>Scoring</h1>
+      <p class="lede">只播伴奏；Guide vocal fader 可以加返 Demucs 人聲做 backing。Mic 用嚟評分，唔會從呢部 PC 返出喇叭。Audio team delay FOH 人聲 = 下面個數字。</p>
+    </header>
+
+    <section class="foh" id="foh">
+      <p class="foh-label">FOH VOCAL DELAY</p>
+      <p class="foh-ms" id="fohMs">— ms</p>
+      <p class="hint">Foldback / direct vocal = 0 ms。Instrumental 唔好再 delay。</p>
+    </section>
+
+    <section class="import">
+      <label>Song pack
+        <select id="pack"></select>
+      </label>
+      <label>Singer (this take)
+        <input type="text" id="singer" placeholder="pack 預設，呢度可以改" maxlength="120" />
+      </label>
+      <label>Output (instrumental)
+        <select id="output"></select>
+      </label>
+      <label>Input (mic / interface)
+        <select id="input"></select>
+      </label>
+      <label>Input channel
+        <input type="number" id="channel" min="0" value="0" />
+      </label>
+      <label>Guide vocal — backing help (0 = karaoke only)
+        <input type="range" id="vocalMix" min="0" max="100" value="0" />
+        <span id="vocalMixVal">0%</span>
+      </label>
+      <label>Align trim (ms) — scoring only, not for FOH
+        <input type="range" id="trim" min="-80" max="80" value="0" />
+        <span id="trimVal">0</span>
+      </label>
+      <p class="status-line" id="lat">input — · output —</p>
+      <div class="row">
+        <button type="button" id="start">Start</button>
+        <button type="button" id="stop">Stop</button>
+        <a class="overlay-link" href="/show" target="_blank">Open overlay</a>
+        <a class="overlay-link" href="/prep">Prep</a>
+      </div>
+    </section>
+  </main>
+  <script src="/web/live.js"></script>
+</body>
+</html>

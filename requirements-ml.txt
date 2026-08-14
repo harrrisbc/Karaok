@@ -1,0 +1,15 @@
+# Heavy prep models. Install into the same venv as requirements.txt
+# Python 3.11 recommended.
+#
+# Prefer a clean PyPI-only install to avoid broken NGC extra indexes:
+#   pip install --isolated --index-url https://pypi.org/simple -r requirements-ml.txt
+#
+# Then force CUDA torch for RTX (Windows example):
+#   pip install --upgrade --force-reinstall torch --index-url https://download.pytorch.org/whl/cu128
+#
+-r requirements.txt
+demucs>=4.0.1
+librosa>=0.10
+soundfile>=0.12
+openai-whisper>=20231117
+stable-ts>=2.19.0

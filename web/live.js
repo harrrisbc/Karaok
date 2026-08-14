@@ -1,0 +1,181 @@
+const packEl = document.getElementById("pack");
+const singerEl = document.getElementById("singer");
+const inputEl = document.getElementById("input");
+const outputEl = document.getElementById("output");
+const channelEl = document.getElementById("channel");
+const trimEl = document.getElementById("trim");
+const trimVal = document.getElementById("trimVal");
+const vocalMixEl = document.getElementById("vocalMix");
+const vocalMixVal = document.getElementById("vocalMixVal");
+const fohMs = document.getElementById("fohMs");
+const lat = document.getElementById("lat");
+
+function savePrefs() {
+  localStorage.setItem(
+    "karaok-live",
+    JSON.stringify({
+      input: inputEl.value,
+      output: outputEl.value,
+      channel: channelEl.value,
+      pack: packEl.value,
+      singer: singerEl.value,
+      vocalMix: vocalMixEl.value,
+    }),
+  );
+}
+
+function loadPrefs() {
+  try {
+    return JSON.parse(localStorage.getItem("karaok-live") || "{}");
+  } catch {
+    return {};
+  }
+}
+
+async function jsonFetch(url, options) {
+  const res = await fetch(url, options);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || res.statusText);
+  return data;
+}
+
+function applyStatus(s) {
+  if (s.failed) {
+    fohMs.textContent = "FAILED";
+    lat.textContent = s.frame?.fail_reason === "rhythm" ? "拍子 HP 0 — playback stopped" : "音準 HP 0 — playback stopped";
+    return;
+  }
+  const out = s.output_ms ?? s.foh_vocal_delay_ms;
+  if (out != null && s.running) {
+    fohMs.textContent = `${Number(out).toFixed(1)} ms`;
+  } else {
+    fohMs.textContent = "— ms";
+  }
+  lat.textContent = s.running
+    ? `input ${Number(s.input_ms).toFixed(1)} ms · output ${Number(s.output_ms).toFixed(1)} ms · trim ${s.trim_ms} · guide ${Math.round((s.vocal_mix || 0) * 100)}%`
+    : "stopped — pick devices, then Start";
+}
+
+async function loadDevices() {
+  const data = await jsonFetch("/api/devices");
+  const prefs = loadPrefs();
+  const ins = data.devices.filter((d) => d.max_input_channels > 0);
+  const outs = data.devices.filter((d) => d.max_output_channels > 0);
+  inputEl.innerHTML = ins
+    .map(
+      (d) =>
+        `<option value="${d.index}">[${d.index}] ${d.hostapi} — ${d.name} (in ${d.max_input_channels})</option>`,
+    )
+    .join("");
+  outputEl.innerHTML = outs
+    .map(
+      (d) =>
+        `<option value="${d.index}">[${d.index}] ${d.hostapi} — ${d.name} (out ${d.max_output_channels})</option>`,
+    )
+    .join("");
+  if (prefs.input) inputEl.value = prefs.input;
+  else if (data.default_input != null) inputEl.value = String(data.default_input);
+  if (prefs.output) outputEl.value = prefs.output;
+  else if (data.default_output != null) outputEl.value = String(data.default_output);
+  if (prefs.channel) channelEl.value = prefs.channel;
+  if (prefs.vocalMix != null) vocalMixEl.value = prefs.vocalMix;
+  vocalMixVal.textContent = `${vocalMixEl.value}%`;
+}
+
+async function loadPacks() {
+  const data = await jsonFetch("/api/songs");
+  const ready = data.songs.filter((s) => s.has_instrumental);
+  packEl.innerHTML = ready.length
+    ? ready
+        .map((s) => `<option value="${s.id}" data-singer="${s.singer || ""}">${s.title} (${s.status})</option>`)
+        .join("")
+    : `<option value="">No packs with instrumental</option>`;
+  const prefs = loadPrefs();
+  if (prefs.pack) packEl.value = prefs.pack;
+  fillSingerFromPack(prefs.singer);
+}
+
+function fillSingerFromPack(prefSinger) {
+  const opt = packEl.selectedOptions[0];
+  const fromPack = opt?.getAttribute("data-singer") || "";
+  singerEl.value = prefSinger || fromPack;
+}
+
+packEl.addEventListener("change", () => fillSingerFromPack(""));
+
+document.getElementById("start").addEventListener("click", async () => {
+  savePrefs();
+  const body = {
+    pack_id: packEl.value,
+    input_device: Number(inputEl.value),
+    output_device: Number(outputEl.value),
+    input_channel: Number(channelEl.value || 0),
+    trim_ms: Number(trimEl.value),
+    vocal_mix: Number(vocalMixEl.value || 0) / 100,
+    singer: singerEl.value.trim(),
+  };
+  const status = await jsonFetch("/api/live/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  applyStatus(status);
+});
+
+document.getElementById("stop").addEventListener("click", async () => {
+  applyStatus(await jsonFetch("/api/live/stop", { method: "POST" }));
+});
+
+trimEl.addEventListener("input", () => {
+  trimVal.textContent = trimEl.value;
+});
+trimEl.addEventListener("change", async () => {
+  trimVal.textContent = trimEl.value;
+  try {
+    applyStatus(
+      await jsonFetch("/api/live/trim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trim_ms: Number(trimEl.value) }),
+      }),
+    );
+  } catch {
+    /* idle */
+  }
+});
+
+async function pushVocalMix() {
+  vocalMixVal.textContent = `${vocalMixEl.value}%`;
+  savePrefs();
+  try {
+    applyStatus(
+      await jsonFetch("/api/live/vocal-mix", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vocal_mix: Number(vocalMixEl.value || 0) / 100 }),
+      }),
+    );
+  } catch {
+    /* idle */
+  }
+}
+
+vocalMixEl.addEventListener("input", () => {
+  vocalMixVal.textContent = `${vocalMixEl.value}%`;
+  pushVocalMix();
+});
+
+async function poll() {
+  try {
+    applyStatus(await jsonFetch("/api/live/status"));
+  } catch {
+    /* server down */
+  }
+  setTimeout(poll, 500);
+}
+
+loadDevices().catch((err) => {
+  lat.textContent = String(err);
+});
+loadPacks();
+poll();

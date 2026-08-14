@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <title>KARAOK — Show Overlay</title>
+  <link rel="stylesheet" href="/web/overlay.css?v=7" />
+</head>
+<body>
+  <div id="stage">
+    <aside class="word-card" aria-label="song and singer">
+      <p class="word-kicker">NOW</p>
+      <p class="word-title" id="songTitle">SELECT SONG</p>
+      <p class="word-singer" id="singerName">—</p>
+    </aside>
+
+    <aside class="hp-dock" aria-label="HP and timing">
+      <section class="badges" id="badges" aria-label="timing feedback">
+        <span class="badge" data-kind="flat">FLAT</span>
+        <span class="badge" data-kind="sharp">SHARP</span>
+        <span class="badge" data-kind="early">EARLY</span>
+        <span class="badge" data-kind="late">LATE</span>
+      </section>
+
+      <div class="hp-bars" aria-label="HP">
+        <div class="hp-row">
+          <span>音準</span>
+          <div class="hp-track"><i id="mPitch"></i></div>
+          <b id="hpPitchVal">100</b>
+        </div>
+        <div class="hp-row">
+          <span>拍子</span>
+          <div class="hp-track"><i id="mRhythm"></i></div>
+          <b id="hpRhythmVal">100</b>
+        </div>
+      </div>
+
+      <div class="timer" id="timer" aria-label="remaining">0:00</div>
+    </aside>
+
+    <div class="score-chip" id="score" aria-label="score">--.-</div>
+
+    <div class="fail-banner" id="failBanner" hidden>
+      <p class="fail-kicker">FAILED</p>
+      <p class="fail-reason" id="failReason">音準 HP 0</p>
+    </div>
+
+    <div class="bottom-stack">
+      <section class="lyric-pill" id="lyrics" aria-label="lyrics">
+        <span class="lyric-icon" aria-hidden="true">♪</span>
+        <div class="lyric-stack">
+          <p class="lyric-line" id="lyricNow">Drop a song in Prep, then open this overlay in OBS.</p>
+          <p class="lyric-ghost" id="lyricNext"></p>
+        </div>
+      </section>
+
+      <section class="pitch-highway" aria-label="pitch highway">
+        <div class="highway-glow" aria-hidden="true"></div>
+        <div class="lane" id="pitchLane">
+          <div class="notes" id="notesLayer" aria-hidden="true"></div>
+          <div class="now-line" aria-hidden="true"></div>
+          <div class="playhead" id="playhead" aria-hidden="true">
+            <div class="coin"></div>
+            <div class="hit-star" id="hitStar"></div>
+          </div>
+          <div class="sung-cursor" id="sungBar"></div>
+        </div>
+        <div class="highway-meta">
+          <span class="stable-label">STABLE <i id="mStable"></i></span>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script src="/web/overlay.js?v=7"></script>
+</body>
+</html>

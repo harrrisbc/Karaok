@@ -18,6 +18,9 @@ songs/*
 *.webm
 *.m4a
 
+# Packaged demos (upload via GitHub Releases, not git)
+dist/
+
 # Editor / OS
 .cursor/
 .DS_Store

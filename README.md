@@ -9,6 +9,23 @@ Live karaoke scoring show. `/show` is a 1920×1080 surface with optional **MV** 
 
 Only ingest / perform songs you have the right to use.
 
+## Demo song packs (optional)
+
+Four ready packs (instrumental + lyrics + melody + MV) ship as a **GitHub Release** asset, not in git (too large / rights-sensitive).
+
+1. Open the latest [Release](https://github.com/harrrisbc/Karaok/releases) and download `karaok-demo-packs.zip`.
+2. Extract so you get `songs/<pack_id>/meta.json` (into the repo `songs/` folder, or any folder).
+3. Windows: restart Prep/Live — packs appear in `/live`.  
+   Mac preview: `bash scripts/mac/run.sh /path/to/extracted-songs-parent` (folder that contains `songs/` **or** the pack folders — match your layout).
+
+Rebuild locally after Prep:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\pack_demo.py
+# optional smaller zip without MV:
+.\.venv\Scripts\python.exe scripts\pack_demo.py --no-mv
+```
+
 ## Choose install
 
 | You have… | Follow |

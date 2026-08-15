@@ -1,39 +1,24 @@
 # Karaok
 
-Live karaoke scoring show. `/show` is a 1920×1080 surface with optional **MV** or **camera / capture-card** background; `/live` is the operator desk. OBS is optional.
-
-| Mode | What you get |
-|------|----------------|
-| **Windows full** | Prep (import → stems → melody/lyrics + MV) + Live + Show |
-| **Mac preview** | Live control + Show + mic scoring only (load ready packs) |
+Windows karaoke show stack: **Prep** song packs → **Live** operator desk → **Show** 1920×1080 overlay (OBS optional). Mac runs a **Live + Show preview** only.
 
 Only ingest / perform songs you have the right to use.
 
-## Demo song packs (optional)
+| | Windows full | Mac preview |
+|--|--------------|-------------|
+| Prep (import, Demucs, Whisper, LRCLIB) | Yes | No |
+| Live scoring + Show | Yes | Yes |
+| Song source | Prep locally | Copy packs from Windows |
+| Launch | `scripts/run.ps1` | `Karaok Preview.app` or `scripts/mac/run.sh` |
 
-Four ready packs (instrumental + lyrics + melody + MV) ship as a **GitHub Release** asset, not in git (too large / rights-sensitive).
+## Install
 
-1. Open the latest [Release](https://github.com/harrrisbc/Karaok/releases) and download `karaok-demo-packs.zip`.
-2. Extract so you get `songs/<pack_id>/meta.json` (into the repo `songs/` folder, or any folder).
-3. Windows: restart Prep/Live — packs appear in `/live`.  
-   Mac preview: `bash scripts/mac/run.sh /path/to/extracted-songs-parent` (folder that contains `songs/` **or** the pack folders — match your layout).
+| Machine | Guide |
+|---------|--------|
+| Windows show / prep PC | [docs/install-windows.md](docs/install-windows.md) |
+| Mac control + overlay | [docs/install-mac-preview.md](docs/install-mac-preview.md) |
 
-Rebuild locally after Prep:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\pack_demo.py
-# optional smaller zip without MV:
-.\.venv\Scripts\python.exe scripts\pack_demo.py --no-mv
-```
-
-## Choose install
-
-| You have… | Follow |
-|-----------|--------|
-| Windows show PC / prep machine | [docs/install-windows.md](docs/install-windows.md) |
-| Mac demo (boss / preview, no analyze) | [docs/install-mac-preview.md](docs/install-mac-preview.md) |
-
-### Quick start — Windows
+### Windows (quick)
 
 ```powershell
 cd C:\dev\Karaok
@@ -47,69 +32,59 @@ winget install --id Gyan.FFmpeg -e
 .\scripts\run.ps1
 ```
 
-Then open http://127.0.0.1:8000/prep and http://127.0.0.1:8000/live.  
-Show: http://127.0.0.1:8000/show (1920×1080). Use `/live` **Show background** to pick MV or camera. `?transparent=1` if you still composite in OBS.
+Open http://127.0.0.1:8000/prep and http://127.0.0.1:8000/live.  
+Show: http://127.0.0.1:8000/show — pick MV or camera under Live **Show background**.
 
-Full steps: [docs/install-windows.md](docs/install-windows.md).
+**Prep flow:** Import (small Whisper) → **LRCLIB → Align** → optional Align .txt. LRCLIB is manual (not auto-applied on import).
 
-### Quick start — Mac preview
+### Mac preview (quick)
 
-Needs Python **3.11–3.13** (not 3.14), Homebrew, and PortAudio.
-
-1. Copy this repo to the Mac.
-2. Copy a Windows `songs/` library (folders with `meta.json` + `instrumental.wav`).
-3. **Operator path** — build a double-clickable app once:
+Needs Python **3.11–3.13**, Homebrew, PortAudio. Copy a Windows `songs/` library first.
 
 ```bash
 cd /path/to/Karaok
-bash scripts/mac/build-app.sh
-# → dist/Karaok Preview.app  (pick songs folder on first launch)
-```
-
-4. **Dev path** — Terminal:
-
-```bash
+bash scripts/mac/build-app.sh          # → dist/Karaok Preview.app
+# or Terminal:
 bash scripts/mac/setup.sh
-bash scripts/mac/run.sh /path/to/copied-songs
+bash scripts/mac/run.sh /path/to/songs
 ```
 
-Browser opens `/live` (control) and `/show?preview=1` (overlay). Quit the `.app` or Ctrl+C to stop.  
 Allow **Karaok Preview** (or Terminal) microphone access when macOS asks.
 
-Full steps: [docs/install-mac-preview.md](docs/install-mac-preview.md).
+## Demo packs
 
-## Repo layout
+Four ready packs ship as a **[GitHub Release](https://github.com/harrrisbc/Karaok/releases)** asset (`karaok-demo-packs.zip`), not in git.
 
-```text
-engine/          audio, packs, scoring, prep pipelines
-server/          FastAPI — app.py (full), preview_app.py (Mac/live-only)
-web/             prep / live / overlay UI
-songs/           local song packs (gitignored audio)
-scripts/
-  run.ps1        Windows full server
-  mac/setup.sh   Mac preview one-time install
-  mac/run.sh     Mac preview start (Terminal)
-  mac/build-app.sh  Build Karaok Preview.app
-  mac/app_main.py   .app / CLI launcher
-docs/
-  install-windows.md
-  install-mac-preview.md
-  intent/        design notes
-requirements.txt           full app (light)
-requirements-ml.txt        Demucs / Whisper / librosa
-requirements-preview.txt   Mac/live-only deps
+1. Download from the latest release.
+2. Extract so you have `…/<pack_id>/meta.json` (+ `instrumental.wav`).
+3. Windows: put under repo `songs/` and refresh Live.  
+   Mac: point the app / `run.sh` at that library folder.
+
+Rebuild after Prep:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\pack_demo.py
 ```
 
-## Requirements files
+## Layout
 
-| File | Use |
-|------|-----|
-| `requirements.txt` | FastAPI, sounddevice, yt-dlp, … |
-| `requirements-ml.txt` | Prep models (pulls in `requirements.txt`) |
-| `requirements-preview.txt` | Live preview only — no torch / Demucs |
+```text
+engine/     packs, stems, melody, lyrics, live scoring
+server/     app.py (full) · preview_app.py (Mac/live-only)
+web/        prep · live · show overlay
+scripts/    run.ps1 · mac/ (setup, run, build-app)
+docs/       install guides · intent/
+songs/      local packs (audio gitignored)
+```
+
+| Requirements file | Use |
+|-------------------|-----|
+| `requirements.txt` | Full app (FastAPI, sounddevice, yt-dlp, …) |
+| `requirements-ml.txt` | Prep models (Demucs / Whisper / librosa) |
+| `requirements-preview.txt` | Mac Live+Show only |
 
 ## Status
 
-Done: song packs, ingest, Demucs, melody + lyrics, live scoring, overlay HP / song card, Mac preview entry + **Karaok Preview.app** build script.
+**Done:** Prep pipeline, manual LRCLIB, live scoring, Show MV/camera, dual-window operator UX, Mac preview + `.app` build.
 
-Not yet: notarized DMG, full Prep-on-Mac, score reveal.
+**Not yet:** notarized Mac DMG, Prep-on-Mac, public score-reveal polish.

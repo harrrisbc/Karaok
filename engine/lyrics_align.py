@@ -337,16 +337,13 @@ def apply_lrc_to_pack(
         }
 
     if mode == "trust-lrc":
-        from engine.lrc import shift_lines
-
-        offset = lrc_offset_for_pack(pack, lines)
-        if offset:
-            lines = shift_lines(lines, offset)
+        # Keep LRCLIB clocks verbatim. Auto melody-onset shift pulled lines early
+        # whenever the chart had false intro notes (e.g. 《世一》 00:18 → ~00:02).
         words: list[dict[str, Any]] = []
         for ln in lines:
             words.extend(ln.get("words") or [])
         preset = LANG_PRESETS[lang_key]
-        extra["lrc_offset_sec"] = offset
+        extra["lrc_offset_sec"] = 0.0
         return write_lyrics_payload(
             pack,
             lines=lines,

@@ -18,11 +18,28 @@ const bgCamWrap = document.getElementById("bgCamWrap");
 const diffHint = document.getElementById("diffHint");
 const healBtn = document.getElementById("healHp");
 const godModeEl = document.getElementById("godMode");
+const fohEl = document.getElementById("foh");
 const fohMs = document.getElementById("fohMs");
 const lat = document.getElementById("lat");
 const startBtn = document.getElementById("start");
 const calibrateBtn = document.getElementById("calibrate");
 const calibrationEl = document.getElementById("calibration");
+
+const PACK_HANDOFF_KEY = "karaok-latest-pack";
+let packHandoffChannel = null;
+let sessionBusy = false;
+let deferredPackHandoff = null;
+try {
+  packHandoffChannel = new BroadcastChannel("karaok-pack-handoff");
+} catch {
+  packHandoffChannel = null;
+}
+
+function setFohMode(running) {
+  if (!fohEl) return;
+  fohEl.classList.toggle("is-live", Boolean(running));
+  fohEl.classList.toggle("is-idle", !running);
+}
 
 const DIFF_PRESETS = {
   easy: { cents: 80, tempoMs: 150, drain: 6 },
@@ -95,14 +112,24 @@ async function jsonFetch(url, options) {
 }
 
 function applyStatus(s) {
-  startBtn.disabled = Boolean(s.running || s.calibrating);
-  calibrateBtn.disabled = Boolean(s.running || s.calibrating);
+  const wasBusy = sessionBusy;
+  sessionBusy = Boolean(s.running || s.calibrating);
+  startBtn.disabled = sessionBusy;
+  calibrateBtn.disabled = sessionBusy;
+  setFohMode(Boolean(s.running));
+  if (wasBusy && !sessionBusy && deferredPackHandoff) {
+    const pending = deferredPackHandoff;
+    deferredPackHandoff = null;
+    applyPackHandoff(pending).catch(() => {});
+  }
   if (s.failed) {
+    setFohMode(false);
     fohMs.textContent = "FAILED";
     lat.textContent = s.frame?.fail_reason === "rhythm" ? "拍子 HP 0 — playback stopped" : "音準 HP 0 — playback stopped";
     return;
   }
   if (s.cleared) {
+    setFohMode(false);
     const score = s.frame?.score;
     fohMs.textContent = "CLEAR";
     lat.textContent = `CLEAR · score ${score != null ? Number(score).toFixed(1) : "—"} · ${s.difficulty || "normal"}`;
@@ -174,22 +201,97 @@ async function loadDevices() {
   updateDiffHint();
 }
 
-async function loadPacks() {
+async function loadPacks(preferPackId) {
   const data = await jsonFetch("/api/songs");
   const ready = data.songs.filter((s) => s.has_instrumental);
+  const prev = preferPackId || packEl.value;
   packEl.innerHTML = ready.length
     ? ready
         .map(
           (s) =>
-            `<option value="${s.id}" data-singer="${s.singer || ""}" data-has-mv="${s.has_mv ? "1" : "0"}">${s.title}${s.has_mv ? " · MV" : ""}</option>`,
+            `<option value="${s.id}" data-singer="${escapeAttr(s.singer || "")}" data-has-mv="${s.has_mv ? "1" : "0"}">${escapeHtml(s.title)}${s.has_mv ? " · MV" : ""}</option>`,
         )
         .join("")
     : `<option value="">No packs with instrumental</option>`;
   const prefs = loadPrefs();
-  if (prefs.pack) packEl.value = prefs.pack;
-  fillSingerFromPack(prefs.singer);
+  const pick =
+    (preferPackId && packEl.querySelector(`option[value="${cssEscape(preferPackId)}"]`) && preferPackId) ||
+    (prev && packEl.querySelector(`option[value="${cssEscape(prev)}"]`) && prev) ||
+    (prefs.pack && packEl.querySelector(`option[value="${cssEscape(prefs.pack)}"]`) && prefs.pack) ||
+    "";
+  if (pick) packEl.value = pick;
+  fillSingerFromPack(preferPackId ? "" : prefs.singer);
   if (prefs.bgMode) bgModeEl.value = prefs.bgMode;
   updateBgUi();
+  if (preferPackId && pick === preferPackId) {
+    try {
+      localStorage.setItem(
+        "karaok-live",
+        JSON.stringify({ ...prefs, pack: preferPackId, singer: singerEl.value }),
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function escapeAttr(s) {
+  return escapeHtml(s).replace(/'/g, "&#39;");
+}
+
+function cssEscape(value) {
+  if (typeof CSS !== "undefined" && CSS.escape) return CSS.escape(value);
+  return String(value).replace(/["\\]/g, "\\$&");
+}
+
+function readPackHandoff() {
+  try {
+    const raw = localStorage.getItem(PACK_HANDOFF_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data?.packId) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+async function applyPackHandoff(payload, { force = false } = {}) {
+  if (!payload?.packId) return;
+  const age = payload.ts ? Date.now() - Number(payload.ts) : Infinity;
+  // Live already open: accept handoffs up to 10m. Cold load: only very recent.
+  if (!force && age > 10 * 60 * 1000) return;
+  if (force && age > 90 * 1000) return;
+  // Don't steal the selected pack mid-take / calibrate — apply after Stop.
+  if (sessionBusy) {
+    deferredPackHandoff = payload;
+    return;
+  }
+  await loadPacks(payload.packId);
+}
+
+function listenForPackHandoff() {
+  window.addEventListener("storage", (ev) => {
+    if (ev.key !== PACK_HANDOFF_KEY || !ev.newValue) return;
+    try {
+      applyPackHandoff(JSON.parse(ev.newValue));
+    } catch {
+      /* ignore */
+    }
+  });
+  packHandoffChannel?.addEventListener("message", (ev) => {
+    applyPackHandoff(ev.data);
+  });
+  const pending = readPackHandoff();
+  if (pending) applyPackHandoff(pending, { force: true });
 }
 
 function fillSingerFromPack(prefSinger) {
@@ -473,7 +575,7 @@ async function poll() {
 loadDevices().catch((err) => {
   lat.textContent = String(err);
 });
-loadPacks();
+loadPacks().then(() => listenForPackHandoff());
 loadCameras();
 poll();
 jsonFetch("/api/health")

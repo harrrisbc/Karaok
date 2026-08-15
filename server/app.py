@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, Field
 
 from engine.ingest import has_youtube_tools
 from engine.jobs import (
@@ -12,8 +13,16 @@ from engine.jobs import (
     start_analyze,
     start_local_import,
     start_lyrics_align,
+    start_lyrics_lrclib,
     start_lyrics_whisper,
     start_youtube_import,
+)
+from engine.lrclib import (
+    cache_raw,
+    pack_duration_sec,
+    public_candidate,
+    search_lrclib,
+    split_artist_title,
 )
 from engine.lyrics import (
     LANG_PRESETS,
@@ -218,6 +227,73 @@ async def job_lyrics_align(
             lyrics_lang=lyrics_lang,
             whisper_model=_parse_model(whisper_model),
             prefer_remap=bool(prefer_remap),
+        )
+    )
+
+
+class LrclibApplyBody(BaseModel):
+    id: int = Field(ge=1)
+    mode: str = "align"
+    force: bool = False
+    whisper_model: str | None = None
+
+
+@app.get("/api/lyrics/lrclib/search/{pack_id}")
+def lyrics_lrclib_search(
+    pack_id: str,
+    title: str | None = None,
+    artist: str | None = None,
+) -> dict:
+    """Manual LRCLIB browser: search candidates and cache them on the pack."""
+    try:
+        pack = get_pack(pack_id)
+    except FileNotFoundError:
+        raise HTTPException(404, "song pack 唔存在") from None
+    meta = pack.load_meta()
+    query_title = (title or "").strip() or meta.title
+    query_artist = (artist or "").strip()
+    if not query_artist:
+        parsed_artist, _parsed_track = split_artist_title(query_title)
+        if not parsed_artist:
+            query_artist = (meta.singer or "").strip()
+    duration = pack_duration_sec(pack)
+    try:
+        found = search_lrclib(title=query_title, artist=query_artist, duration=duration)
+    except Exception as exc:
+        raise HTTPException(502, f"LRCLIB 連線失敗: {exc}") from exc
+    cache_raw(pack, found)
+    return {
+        "pack_id": pack_id,
+        "query": {"title": query_title, "artist": query_artist, "duration": duration},
+        "auto": public_candidate(found["auto"]) if found.get("auto") else None,
+        "candidates": [public_candidate(c) for c in (found.get("candidates") or [])],
+        "attempts": found.get("attempts") or [],
+        "error": found.get("error"),
+    }
+
+
+@app.post("/api/lyrics/lrclib/apply/{pack_id}")
+def lyrics_lrclib_apply(pack_id: str, body: LrclibApplyBody) -> dict:
+    """Apply a searched LRCLIB record onto the pack (trust-lrc or align)."""
+    try:
+        pack = get_pack(pack_id)
+    except FileNotFoundError:
+        raise HTTPException(404, "song pack 唔存在") from None
+    if not pack.vocals.exists():
+        raise HTTPException(400, "vocals.wav missing — 先 Import / split") from None
+    mode = body.mode.strip().lower()
+    if mode not in {"trust-lrc", "align"}:
+        raise HTTPException(400, "mode 要係 trust-lrc 或 align") from None
+    meta = pack.load_meta()
+    return _start_or_busy(
+        lambda: start_lyrics_lrclib(
+            pack_id,
+            lrclib_id=body.id,
+            mode=mode,
+            lyrics_lang=meta.lyrics_lang,
+            whisper_model=_parse_model(body.whisper_model) or "small",
+            force=body.force,
+            matched_by="manual",
         )
     )
 

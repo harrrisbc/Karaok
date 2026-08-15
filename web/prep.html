@@ -3,62 +3,76 @@
 <head>
   <meta charset="utf-8" />
   <title>KARAOK — Prep Studio</title>
-  <link rel="stylesheet" href="/web/prep.css" />
+  <link rel="stylesheet" href="/web/prep.css?v=19" />
 </head>
-<body>
-  <main>
-    <header>
-      <p class="kicker">PREP STUDIO</p>
-      <h1>Karaok</h1>
-      <p class="lede">開拍前入歌。現場用 Show overlay，鏡頭喺 OBS 合成。</p>
-    </header>
+<body class="prep-page">
+  <main class="prep-desk">
+    <div class="prep-top">
+      <header class="desk-header">
+        <div class="row header-row">
+          <div>
+            <p class="kicker">PREP STUDIO</p>
+            <h1>Prep</h1>
+          </div>
+          <a class="overlay-link secondary-link" href="/live" target="_blank">Live</a>
+        </div>
+      </header>
 
-    <section class="health" id="health">Checking tools…</section>
+      <section class="health" id="health">Checking tools…</section>
 
-    <section class="import">
-      <label>Lyrics language
-        <select id="lang">
-          <option value="cantonese" selected>Cantonese / 粵語</option>
-          <option value="chinese">Chinese / 普通話中文</option>
-          <option value="english">English</option>
-        </select>
-      </label>
-      <label>Whisper model
-        <select id="whisperModel">
-          <option value="small" selected>small（已下載，穩）</option>
-          <option value="medium">medium（少錯字，第一次要 download）</option>
-          <option value="large-v3">large-v3（最準，第一次要 download）</option>
-        </select>
-      </label>
-      <p class="hint">一次只可以跑 <strong>一個</strong> job（GPU 共用）。Import 會開新 pack；舊歌想換 model 用 <strong>Analyze</strong>（先試 LRCLIB）。LRCLIB 唔啱就撳 <strong>Retry Whisper</strong> 強制 ASR。有正確歌詞就撳 <strong>Align lyrics</strong> 上傳 txt（一行一句）。Whisper 喺 guitar solo／長器樂附近有時會漏前後一兩句 — 有官方歌詞就用 Align／LRCLIB。</p>
-      <label>Singer name
-        <input type="text" id="singer" placeholder="演唱者（Prep 寫入 pack，Live 都可以改）" maxlength="120" />
-      </label>
-      <form id="fileForm">
-        <label>MP3 / WAV
-          <input type="file" id="file" accept="audio/*,.mp3,.wav,.flac,.m4a" required />
+      <section class="import">
+        <h2 class="desk-title">Import</h2>
+        <p class="hint">Import（small Whisper）→ LRCLIB → Align · 一次一個 job</p>
+        <div class="import-grid">
+          <label>Lyrics language
+            <select id="lang">
+              <option value="cantonese" selected>Cantonese / 粵語</option>
+              <option value="chinese">Chinese / 普通話中文</option>
+              <option value="english">English</option>
+            </select>
+          </label>
+          <label>Whisper model
+            <select id="whisperModel">
+              <option value="small" selected>small（穩）</option>
+              <option value="medium">medium</option>
+              <option value="large-v3">large-v3</option>
+            </select>
+          </label>
+        </div>
+        <label>Singer
+          <input type="text" id="singer" placeholder="演唱者" maxlength="120" />
         </label>
-        <button type="submit">Import + analyze</button>
-      </form>
-      <form id="ytForm">
-        <label>YouTube URL
-          <input type="url" id="yt" placeholder="https://www.youtube.com/watch?v=…" required />
-        </label>
-        <button type="submit">Download + analyze</button>
-      </form>
-    </section>
+        <div class="import-actions">
+          <form id="fileForm">
+            <label>Local audio
+              <div class="file-pick">
+                <input type="file" id="file" accept="audio/*,.mp3,.wav,.flac,.m4a" required />
+                <label for="file" class="file-btn">Choose file</label>
+                <span class="file-name" id="fileName">No file</span>
+              </div>
+            </label>
+            <button type="submit">Import + analyze</button>
+          </form>
+          <form id="ytForm">
+            <label>YouTube URL
+              <input type="url" id="yt" placeholder="https://www.youtube.com/watch?v=…" required />
+            </label>
+            <button type="submit">Download + analyze</button>
+          </form>
+        </div>
+      </section>
 
-    <section class="job" id="job" hidden></section>
+      <section class="job" id="job" hidden></section>
+    </div>
 
-    <section>
-      <div class="row">
-        <h2>Song packs</h2>
-        <a class="overlay-link" href="/live">Live scoring</a>
-        <a class="overlay-link" href="/show?preview=1" target="_blank">Open overlay (preview)</a>
+    <section class="packs">
+      <div class="row header-row packs-head">
+        <h2 class="desk-title packs-title">Song packs</h2>
+        <a class="overlay-link secondary-link" href="/show?preview=1" target="_blank">Overlay</a>
       </div>
       <ul id="songs"></ul>
     </section>
   </main>
-  <script src="/web/prep.js?v=10"></script>
+  <script src="/web/prep.js?v=19"></script>
 </body>
 </html>

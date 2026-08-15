@@ -11,14 +11,9 @@ from engine.ingest import import_local_audio, import_youtube
 from engine.lyrics import extract_lyrics, normalize_lang, release_cuda
 from engine.lyrics_align import align_lyrics_from_text, apply_lrc_to_pack
 from engine.lrclib import (
-    cache_raw,
-    fetch_record_by_id,
-    line_count_sane,
     lyrics_locked,
-    pack_duration_sec,
     prepare_record,
     record_by_id,
-    search_lrclib,
 )
 from engine.melody import extract_melody, refine_melody_with_lyrics
 from engine.pack import (
@@ -416,6 +411,7 @@ def _fill_lyrics(
     prefer_whisper: bool = False,
     force: bool = False,
 ) -> dict:
+    """Write lyrics.json via Whisper. LRCLIB is manual-only (Prep browser)."""
     if lyrics_locked(pack) and not force:
         job.log.append("lyrics locked (hand-corrected) — skip overwrite")
         import json
@@ -423,67 +419,12 @@ def _fill_lyrics(
         return json.loads(pack.lyrics.read_text(encoding="utf-8"))
 
     if prefer_whisper:
-        job.log.append("prefer_whisper — skip LRCLIB")
-        from engine.concurrency import live_audio_active
-
-        if live_audio_active():
-            job.log.append("live audio active — Whisper on CPU to avoid crash")
-        return extract_lyrics(pack, language=lyrics_lang, model_name=whisper_model)
-
-    meta = pack.load_meta()
-    duration = pack_duration_sec(pack)
-    try:
-        # SongMeta has no artist field yet — LRCLIB parses "Artist - Title" from title when empty.
-        found = search_lrclib(title=meta.title, artist="", duration=duration)
-        cache_raw(pack, found)
-        n_cand = len(found.get("candidates") or [])
-        job.log.append(f"lrclib attempts={found.get('attempts')} candidates={n_cand}")
-    except Exception as exc:
-        job.log.append(f"lrclib skip: {type(exc).__name__}: {exc}")
-        found = {"auto": None}
-
-    auto = found.get("auto")
-    rec = (auto or {}).get("record") if auto else None
-    if rec:
-        try:
-            import json
-
-            old_n = 0
-            if pack.lyrics.exists():
-                old_n = len((json.loads(pack.lyrics.read_text(encoding="utf-8")).get("lines") or []))
-            prepared = prepare_record(
-                rec, lang=lyrics_lang, title=meta.title, matched_by=auto.get("matched_by") or "get"
-            )
-            new_n = len(prepared["normalized"]["lines"])
-            if not line_count_sane(old_n, new_n):
-                job.log.append(f"lrclib line count {new_n} vs existing {old_n} — not auto-applied")
-            else:
-                # Auto-apply only happens when duration already matches (±2s).
-                # Trust LRC clocks — stable-ts align often stretches the first
-                # line across the instrumental intro (lyric "playing" from t≈0).
-                lyrics = apply_lrc_to_pack(
-                    pack,
-                    rec.get("syncedLyrics") or "",
-                    mode="trust-lrc",
-                    language=lyrics_lang,
-                    model_name=whisper_model,
-                    source="lrclib",
-                    locked=False,
-                    extra={"lrclib": prepared["lrclib"]},
-                )
-                job.log.append(
-                    f"lyrics from lrclib-direct lines={len(lyrics.get('lines') or [])} "
-                    f"id={prepared['lrclib'].get('id')} "
-                    f"delta={auto.get('duration_delta')} "
-                    f"offset={lyrics.get('lrc_offset_sec')}"
-                )
-                return lyrics
-        except Exception as exc:
-            job.log.append(f"lrclib apply failed ({type(exc).__name__}: {exc}); fallback ASR")
+        job.log.append("prefer_whisper — Whisper ASR")
+    else:
+        job.log.append("Whisper ASR (LRCLIB auto-apply disabled — use Prep LRCLIB browser)")
 
     from engine.concurrency import live_audio_active
 
     if live_audio_active():
         job.log.append("live audio active — Whisper on CPU to avoid crash")
-    lyrics = extract_lyrics(pack, language=lyrics_lang, model_name=whisper_model)
-    return lyrics
+    return extract_lyrics(pack, language=lyrics_lang, model_name=whisper_model)

@@ -87,7 +87,7 @@ CLI:
 
 Only ingest songs you have the right to use.
 
-Whisper runs on the vocal stem. Guitar solo / long instrumental gaps can still drop a line or two at the edges — prefer LRCLIB or **Align lyrics** when you have the official text.
+Whisper (**small** by default) runs on the vocal stem during Import / Analyze for timing. Then use Prep **LRCLIB → Align** to put the correct synced text onto that timing. **Use LRC** keeps LRCLIB clocks as-is (no re-align). Or upload official txt with **Align lyrics**.
 
 ## 5. Live / FOH notes
 

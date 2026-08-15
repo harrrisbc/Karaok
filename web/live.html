@@ -3,92 +3,121 @@
 <head>
   <meta charset="utf-8" />
   <title>KARAOK — Live</title>
-  <link rel="stylesheet" href="/web/prep.css" />
-  <link rel="stylesheet" href="/web/live.css" />
+  <link rel="stylesheet" href="/web/prep.css?v=19" />
+  <link rel="stylesheet" href="/web/live.css?v=7" />
 </head>
-<body>
-  <main>
-    <header>
-      <p class="kicker">OPERATOR DESK</p>
-      <h1>Live</h1>
-      <p class="lede">呢頁係操作台：揀歌、Start/Stop、trim、guide vocal、Show 背景（MV 或 capture card / camera）。Karaok server 要喺有 mic / 伴奏輸出嗰部機跑。<code>/show</code> 係 1920×1080 show surface（MV 永遠 mute，伴奏由 PortAudio 出）。只播伴奏；Guide vocal 可以加返 Demucs 人聲。Mic 用嚟評分，唔會從呢部 PC 返出喇叭。Audio team delay FOH 人聲 = 下面個數字。想驗證藍 hit：開 Guide vocal + Calibrate，唔好用 phone 播 vocals 入 mic（latency 會令幾乎全部 miss）。</p>
+<body class="live-page">
+  <main class="live-desk">
+    <header class="desk-header">
+      <div class="row header-row">
+        <div>
+          <p class="kicker">OPERATOR DESK</p>
+          <h1>Live</h1>
+          <p class="lede">左 Session / Audio · 右 Scoring / Show · 半屏自動單欄</p>
+        </div>
+        <a class="overlay-link secondary-link" href="/prep" id="prepLink" target="_blank">Prep</a>
+      </div>
     </header>
 
-    <section class="foh" id="foh">
-      <p class="foh-label">FOH VOCAL DELAY</p>
-      <p class="foh-ms" id="fohMs">— ms</p>
-      <p class="hint">Foldback / direct vocal = 0 ms。Instrumental 唔好再 delay。</p>
-    </section>
+    <div class="live-split">
+      <aside class="live-left">
+        <section class="foh is-idle" id="foh">
+          <p class="foh-label">FOH VOCAL DELAY</p>
+          <p class="foh-ms" id="fohMs">— ms</p>
+          <p class="hint">Foldback / direct vocal = 0 ms。Instrumental 唔好再 delay。</p>
+        </section>
 
-    <section class="import">
-      <label>Song pack
-        <select id="pack"></select>
-      </label>
-      <label>Singer (this take)
-        <input type="text" id="singer" placeholder="pack 預設，呢度可以改" maxlength="120" />
-      </label>
-      <label>Output (instrumental)
-        <select id="output"></select>
-      </label>
-      <label>Input (mic / interface)
-        <select id="input"></select>
-      </label>
-      <label>Input channel
-        <input type="number" id="channel" min="0" value="0" />
-      </label>
-      <label>Guide vocal — backing help (0 = karaoke only)
-        <input type="range" id="vocalMix" min="0" max="100" value="0" />
-        <span id="vocalMixVal">0%</span>
-      </label>
-      <label>Align trim (ms) — scoring only, not for FOH
-        <input type="range" id="trim" min="-80" max="80" value="0" />
-        <span id="trimVal">0</span>
-      </label>
-      <label>Difficulty preset — fills pitch + tempo thresholds
-        <select id="difficulty">
-          <option value="easy">Easy (±80¢ · ±150 ms · slow drain)</option>
-          <option value="normal" selected>Normal (±50¢ · ±90 ms)</option>
-          <option value="hard">Hard (±35¢ · ±60 ms · fast drain)</option>
-          <option value="expert">Expert (±25¢ · ±45 ms · brutal)</option>
-        </select>
-      </label>
-      <label>Pitch threshold (±¢) — damage outside this window
-        <input type="range" id="pitchThresh" min="15" max="120" step="5" value="50" />
-        <span id="pitchThreshVal">±50¢</span>
-      </label>
-      <label>Tempo threshold (±ms) — EARLY/LATE outside this window
-        <input type="range" id="tempoThresh" min="30" max="250" step="5" value="90" />
-        <span id="tempoThreshVal">±90 ms</span>
-      </label>
-      <label>Show background
-        <select id="bgMode">
-          <option value="none">None</option>
-          <option value="mv">MV</option>
-          <option value="camera">Camera / capture card</option>
-        </select>
-      </label>
-      <label id="bgCamWrap" hidden>Camera device
-        <select id="bgCamera"></select>
-      </label>
-      <p class="hint">MV 跟伴奏 <code>playback_t</code>；Camera 用呢部機（或 /show 嗰部機）嘅 webcam / capture card。要 grant camera 權限喺 <code>/show</code>。</p>
-      <p class="hint" id="diffHint">Pitch ±50¢ · Tempo ±90 ms · drain from Normal preset.</p>
-      <div class="row">
-        <button type="button" id="healHp" title="Add +10 to both HP bars during a take">HP +10</button>
-        <label class="inline" title="Demo cheat: HP never drains / never fail">
-          <input type="checkbox" id="godMode" /> Demo never-die
-        </label>
-        <button type="button" id="calibrate">Calibrate latency</button>
-        <span class="status-line" id="calibration" hidden></span>
+        <section class="desk-panel desk-session">
+          <h2 class="desk-title">Session</h2>
+          <label>Song pack
+            <select id="pack"></select>
+          </label>
+          <label>Singer (this take)
+            <input type="text" id="singer" placeholder="pack 預設，呢度可以改" maxlength="120" />
+          </label>
+          <div class="transport row">
+            <button type="button" id="start">Start</button>
+            <button type="button" id="stop" class="secondary">Stop</button>
+            <a class="overlay-link" href="/show" target="_blank">Open show</a>
+          </div>
+          <p class="status-line" id="lat">input — · output —</p>
+        </section>
+
+        <section class="desk-panel desk-audio">
+          <h2 class="desk-title">Audio</h2>
+          <label>Output (instrumental)
+            <select id="output"></select>
+          </label>
+          <label>Input (mic / interface)
+            <select id="input"></select>
+          </label>
+          <label>Input channel
+            <input type="number" id="channel" min="0" value="0" />
+          </label>
+          <div>
+            <div class="control-line"><span>Guide vocal %</span><span id="vocalMixVal">0%</span></div>
+            <input type="range" id="vocalMix" min="0" max="100" value="0" />
+          </div>
+          <div class="row">
+            <button type="button" id="calibrate" class="secondary">Calibrate latency</button>
+            <span class="status-line" id="calibration" hidden></span>
+          </div>
+        </section>
+      </aside>
+
+      <div class="live-right">
+        <section class="desk-panel desk-scoring">
+          <h2 class="desk-title">Scoring</h2>
+          <label>Difficulty preset
+            <select id="difficulty">
+              <option value="easy">Easy (±80¢ · ±150 ms · slow drain)</option>
+              <option value="normal" selected>Normal (±50¢ · ±90 ms)</option>
+              <option value="hard">Hard (±35¢ · ±60 ms · fast drain)</option>
+              <option value="expert">Expert (±25¢ · ±45 ms · brutal)</option>
+            </select>
+          </label>
+          <p class="hint" id="diffHint">Pitch ±50¢ · Tempo ±90 ms · drain from Normal preset.</p>
+          <div>
+            <div class="control-line"><span>Pitch ±¢</span><span id="pitchThreshVal">±50¢</span></div>
+            <input type="range" id="pitchThresh" min="15" max="120" step="5" value="50" />
+          </div>
+          <div>
+            <div class="control-line"><span>Tempo ±ms</span><span id="tempoThreshVal">±90 ms</span></div>
+            <input type="range" id="tempoThresh" min="30" max="250" step="5" value="90" />
+          </div>
+          <div>
+            <div class="control-line"><span>Align trim</span><span id="trimVal">0</span></div>
+            <input type="range" id="trim" min="-80" max="80" value="0" />
+          </div>
+        </section>
+
+        <section class="desk-panel desk-show">
+          <h2 class="desk-title">Show background</h2>
+          <label>Mode
+            <select id="bgMode">
+              <option value="none">None</option>
+              <option value="mv">MV</option>
+              <option value="camera">Camera / capture card</option>
+            </select>
+          </label>
+          <label id="bgCamWrap" hidden>Camera device
+            <select id="bgCamera"></select>
+          </label>
+          <p class="hint">MV 跟伴奏 <code>playback_t</code>；Camera 要喺 <code>/show</code> grant 權限。</p>
+        </section>
+
+        <section class="desk-panel desk-demo">
+          <h2 class="desk-title">Demo / cheats</h2>
+          <div class="demo-row">
+            <label class="inline" title="Demo cheat: HP never drains / never fail">
+              <input type="checkbox" id="godMode" /> Demo never-die
+            </label>
+            <button type="button" id="healHp" class="secondary" title="Add +10 to both HP bars during a take">HP +10</button>
+          </div>
+        </section>
       </div>
-      <p class="status-line" id="lat">input — · output —</p>
-      <div class="row">
-        <button type="button" id="start">Start</button>
-        <button type="button" id="stop">Stop</button>
-        <a class="overlay-link" href="/show" target="_blank">Open show</a>
-        <a class="overlay-link" href="/prep" id="prepLink">Prep</a>
-      </div>
-    </section>
+    </div>
   </main>
-  <script src="/web/live.js"></script>
+  <script src="/web/live.js?v=7"></script>
 </body>
 </html>

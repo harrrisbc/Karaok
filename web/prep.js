@@ -5,10 +5,39 @@ const langEl = document.getElementById("lang");
 const modelEl = document.getElementById("whisperModel");
 const fileForm = document.getElementById("fileForm");
 const ytForm = document.getElementById("ytForm");
+const fileInput = document.getElementById("file");
+const fileNameEl = document.getElementById("fileName");
 
 const JOB_KEY = "karaok-active-job";
+const PACK_HANDOFF_KEY = "karaok-latest-pack";
 let busy = false;
 let pollTimer = null;
+let packHandoffChannel = null;
+try {
+  packHandoffChannel = new BroadcastChannel("karaok-pack-handoff");
+} catch {
+  packHandoffChannel = null;
+}
+
+function publishPackHandoff(packId) {
+  if (!packId) return;
+  const payload = { packId, ts: Date.now() };
+  try {
+    localStorage.setItem(PACK_HANDOFF_KEY, JSON.stringify(payload));
+  } catch {
+    /* ignore quota */
+  }
+  try {
+    packHandoffChannel?.postMessage(payload);
+  } catch {
+    /* ignore */
+  }
+}
+
+fileInput?.addEventListener("change", () => {
+  const f = fileInput.files?.[0];
+  if (fileNameEl) fileNameEl.textContent = f ? f.name : "No file";
+});
 
 function selectedLang() {
   return langEl.value || "cantonese";
@@ -48,6 +77,15 @@ function setBusy(on, reason = "") {
     el.disabled = on;
   });
   songsEl.querySelectorAll("[data-align]").forEach((el) => {
+    el.disabled = on;
+  });
+  songsEl.querySelectorAll("[data-lrclib]").forEach((el) => {
+    el.disabled = on;
+  });
+  songsEl.querySelectorAll("[data-lrclib-search]").forEach((el) => {
+    el.disabled = on;
+  });
+  songsEl.querySelectorAll("[data-lrclib-apply]").forEach((el) => {
     el.disabled = on;
   });
   songsEl.querySelectorAll("[data-save-singer]").forEach((el) => {
@@ -169,50 +207,218 @@ async function alignLyrics(packId, file) {
   }
 }
 
+function escapeHtml(text) {
+  return String(text || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function splitTitleHint(title) {
+  const raw = String(title || "");
+  const parts = raw.split(/\s[-–—]\s/);
+  if (parts.length >= 2) {
+    return { artist: parts[0].trim(), track: parts.slice(1).join(" - ").trim() };
+  }
+  return { artist: "", track: raw };
+}
+
+function formatDuration(sec) {
+  const n = Number(sec);
+  if (!Number.isFinite(n) || n <= 0) return "—";
+  const m = Math.floor(n / 60);
+  const s = Math.round(n % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function renderLrclibHits(packId, data) {
+  const panel = songsEl.querySelector(`[data-lrclib-panel="${packId}"]`);
+  if (!panel) return;
+  const box = panel.querySelector(".results");
+  const candidates = data.candidates || [];
+  if (data.error) {
+    box.innerHTML = `<p class="lrclib-empty err">${escapeHtml(data.error)}</p>`;
+    return;
+  }
+  if (!candidates.length) {
+    box.innerHTML = `<p class="lrclib-empty">搵唔到 synced lyrics。試下改 artist / track 再 Search。</p>`;
+    return;
+  }
+  box.innerHTML = candidates
+    .map((c) => {
+      const delta =
+        c.duration_delta == null ? "Δ—" : `Δ${Number(c.duration_delta).toFixed(1)}s`;
+      const auto = c.auto_apply ? " · auto" : "";
+      return `<div class="lrclib-hit">
+        <div>
+          <strong>${escapeHtml(c.track_name || "?")}</strong>
+          <div class="meta">${escapeHtml(c.artist_name || "—")} · ${escapeHtml(c.album_name || "—")} · ${formatDuration(c.duration)} · ${delta}${auto} · #${c.id}</div>
+        </div>
+        <div class="actions">
+          <button type="button" data-lrclib-apply="${packId}" data-id="${c.id}" data-mode="align" title="用 LRCLIB 正確文字，對齊我哋 vocals（建議）">Align</button>
+          <button type="button" class="secondary" data-lrclib-apply="${packId}" data-id="${c.id}" data-mode="trust-lrc" title="直接用 LRCLIB 時間（唔重新對齊）">Use LRC</button>
+        </div>
+      </div>`;
+    })
+    .join("");
+  box.querySelectorAll("[data-lrclib-apply]").forEach((el) => {
+    el.addEventListener("click", () => {
+      applyLrclib(
+        el.getAttribute("data-lrclib-apply"),
+        Number(el.getAttribute("data-id")),
+        el.getAttribute("data-mode") || "trust-lrc",
+      );
+    });
+  });
+}
+
+async function openLrclibBrowser(packId, song) {
+  const panel = songsEl.querySelector(`[data-lrclib-panel="${packId}"]`);
+  if (!panel) return;
+  const open = panel.hasAttribute("hidden");
+  songsEl.querySelectorAll("[data-lrclib-panel]").forEach((el) => el.setAttribute("hidden", ""));
+  songsEl.querySelectorAll("[data-lrclib]").forEach((el) => {
+    el.classList.remove("btn-active");
+    el.setAttribute("aria-expanded", "false");
+  });
+  if (!open) return;
+  panel.removeAttribute("hidden");
+  const toggle = songsEl.querySelector(`[data-lrclib="${packId}"]`);
+  toggle?.classList.add("btn-active");
+  toggle?.setAttribute("aria-expanded", "true");
+  const hint = splitTitleHint(song.title);
+  const artistEl = panel.querySelector("[data-lrclib-artist]");
+  const titleEl = panel.querySelector("[data-lrclib-title]");
+  if (artistEl && !artistEl.value) artistEl.value = song.singer || hint.artist || "";
+  if (titleEl && !titleEl.value) titleEl.value = hint.track || song.title || "";
+  await searchLrclib(packId);
+}
+
+async function searchLrclib(packId) {
+  const panel = songsEl.querySelector(`[data-lrclib-panel="${packId}"]`);
+  if (!panel) return;
+  const artist = panel.querySelector("[data-lrclib-artist]")?.value?.trim() || "";
+  const title = panel.querySelector("[data-lrclib-title]")?.value?.trim() || "";
+  const box = panel.querySelector(".results");
+  box.innerHTML = `<p class="lrclib-empty">Searching lrclib.net…</p>`;
+  try {
+    const qs = new URLSearchParams();
+    if (title) qs.set("title", title);
+    if (artist) qs.set("artist", artist);
+    const data = await jsonFetch(`/api/lyrics/lrclib/search/${encodeURIComponent(packId)}?${qs}`);
+    renderLrclibHits(packId, data);
+  } catch (err) {
+    box.innerHTML = `<p class="lrclib-empty err">${escapeHtml(err.message || err)}</p>`;
+  }
+}
+
+async function applyLrclib(packId, lrclibId, mode) {
+  if (busy) return;
+  setBusy(true, `Applying LRCLIB #${lrclibId} (${mode})…`);
+  try {
+    const job = await jsonFetch(`/api/lyrics/lrclib/apply/${encodeURIComponent(packId)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: lrclibId,
+        mode,
+        force: true,
+        whisper_model: selectedModel(),
+      }),
+    });
+    pollJob(job.id);
+  } catch (err) {
+    setBusy(false);
+    jobEl.hidden = false;
+    jobEl.textContent = String(err.message || err);
+  }
+}
+
 async function loadSongs() {
   const data = await jsonFetch("/api/songs");
   if (!data.songs.length) {
-    songsEl.innerHTML = "<li>未有 song pack。Import 一首先。</li>";
+    songsEl.innerHTML = "<li class=\"song-row\">未有 song pack。Import 一首先。</li>";
     return;
   }
   songsEl.innerHTML = data.songs
     .map((song) => {
-      const err = song.error ? `<span class="err">${song.error}</span>` : "";
+      const err = song.error ? `<span class="err">${escapeHtml(song.error)}</span>` : "";
       const lang = song.lyrics_lang || "?";
-      const singer = song.singer
-        ? `<input data-singer-input="${song.id}" value="${song.singer}" maxlength="120" ${busy ? "disabled" : ""} />`
-        : `<input data-singer-input="${song.id}" placeholder="singer" maxlength="120" ${busy ? "disabled" : ""} />`;
+      const singerVal = escapeHtml(song.singer || "");
       const canAlign = song.has_vocals;
-      const btn = `<button type="button" data-analyze="${song.id}" ${busy ? "disabled" : ""}>Analyze</button>`;
-      const whisperBtn = canAlign
-        ? `<button type="button" data-whisper="${song.id}" title="Skip LRCLIB, run Whisper ASR" ${busy ? "disabled" : ""}>Retry Whisper</button>`
+      const lrclibBtn = canAlign
+        ? `<button type="button" data-lrclib="${song.id}" aria-expanded="false" ${busy ? "disabled" : ""}>LRCLIB</button>`
         : "";
-      const align = canAlign
-        ? `<button type="button" data-align="${song.id}" ${busy ? "disabled" : ""}>Align lyrics</button>
-           <input type="file" accept=".txt,text/plain" data-align-file="${song.id}" hidden />`
+      const save = `<button type="button" class="secondary" data-save-singer="${song.id}" ${busy ? "disabled" : ""}>Save</button>`;
+      const moreActions = canAlign
+        ? `<button type="button" class="secondary" data-analyze="${song.id}" ${busy ? "disabled" : ""}>Analyze</button>
+           <button type="button" class="secondary" data-whisper="${song.id}" title="Force Whisper ASR" ${busy ? "disabled" : ""}>Retry Whisper</button>
+           <button type="button" class="secondary" data-align="${song.id}" ${busy ? "disabled" : ""}>Align .txt</button>
+           <input type="file" accept=".txt,text/plain" data-align-file="${song.id}" hidden />
+           <button type="button" class="secondary" data-mv="${song.id}" ${busy ? "disabled" : ""}>${song.has_mv ? "Replace MV" : "Attach MV"}</button>
+           <input type="file" accept="video/mp4,.mp4" data-mv-file="${song.id}" hidden />`
+        : `<button type="button" class="secondary" data-analyze="${song.id}" ${busy ? "disabled" : ""}>Analyze</button>`;
+      const hint = splitTitleHint(song.title);
+      const lrclibPanel = canAlign
+        ? `<div class="lrclib-panel" data-lrclib-panel="${song.id}" hidden>
+            <p class="panel-kicker">LRCLIB · Align = 用正確字對齊 vocals（建議）</p>
+            <div class="fields">
+              <label>Artist
+                <input type="text" data-lrclib-artist value="${escapeHtml(song.singer || hint.artist || "")}" maxlength="120" />
+              </label>
+              <label>Track
+                <input type="text" data-lrclib-title value="${escapeHtml(hint.track || song.title || "")}" maxlength="200" />
+              </label>
+              <button type="button" data-lrclib-search="${song.id}">Search</button>
+            </div>
+            <div class="results"><p class="lrclib-empty">Search lrclib.net</p></div>
+          </div>`
         : "";
-      const save = `<button type="button" data-save-singer="${song.id}" ${busy ? "disabled" : ""}>Save singer</button>`;
-      const mvBtn = `<button type="button" data-mv="${song.id}" ${busy ? "disabled" : ""}>${song.has_mv ? "Replace MV" : "Attach MV"}</button>
-           <input type="file" accept="video/mp4,.mp4" data-mv-file="${song.id}" hidden />`;
-      return `<li>
-        <span>${song.title}</span>
-        <span class="status">${song.status} · ${assetsLabel(song)} · ${lyricsLabel(song)} · ${lang}${song.singer ? ` · ${song.singer}` : ""}</span>
-        ${singer}
-        ${save}
-        ${mvBtn}
-        ${btn}
-        ${whisperBtn}
-        ${align}
+      return `<li class="song-row">
+        <div class="song-head">
+          <div class="song-meta">
+            <strong class="song-title">${escapeHtml(song.title)}</strong>
+            <span class="song-chips">${assetsLabel(song)} · ${lyricsLabel(song)} · ${lang} · <span class="song-status">${escapeHtml(song.status)}</span></span>
+          </div>
+          <div class="song-primary">
+            ${lrclibBtn}
+            <label class="singer-field">
+              <input data-singer-input="${song.id}" value="${singerVal}" placeholder="singer" maxlength="120" ${busy ? "disabled" : ""} />
+            </label>
+            ${save}
+            <details class="song-more">
+              <summary>More</summary>
+              <div class="song-more-actions">${moreActions}</div>
+            </details>
+          </div>
+        </div>
+        ${lrclibPanel}
         ${err}
       </li>`;
     })
     .join("");
+
+  const songById = Object.fromEntries(data.songs.map((s) => [s.id, s]));
 
   songsEl.querySelectorAll("[data-analyze]").forEach((el) => {
     el.addEventListener("click", () => analyzePack(el.getAttribute("data-analyze")));
   });
   songsEl.querySelectorAll("[data-whisper]").forEach((el) => {
     el.addEventListener("click", () => retryWhisper(el.getAttribute("data-whisper")));
+  });
+  songsEl.querySelectorAll("[data-lrclib]").forEach((el) => {
+    el.addEventListener("click", () => {
+      if (busy) return;
+      const id = el.getAttribute("data-lrclib");
+      openLrclibBrowser(id, songById[id] || { title: "", singer: "" });
+    });
+  });
+  songsEl.querySelectorAll("[data-lrclib-search]").forEach((el) => {
+    el.addEventListener("click", () => {
+      if (busy) return;
+      searchLrclib(el.getAttribute("data-lrclib-search"));
+    });
   });
   songsEl.querySelectorAll("[data-align]").forEach((el) => {
     el.addEventListener("click", () => {
@@ -296,6 +502,9 @@ async function pollJob(id) {
       setBusy(false);
       await loadSongs();
       await loadHealth();
+      if (job.status === "done" && job.pack_id) {
+        publishPackHandoff(job.pack_id);
+      }
     } catch (err) {
       jobEl.textContent = `poll error · ${err.message || err}`;
       pollTimer = setTimeout(tick, 2000);

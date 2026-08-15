@@ -1,6 +1,7 @@
 # Python envs
 .venv/
 .venv-preview/
+.venv-appbuild/
 
 # Caches / build junk
 __pycache__/
@@ -8,6 +9,7 @@ __pycache__/
 .pytest_cache/
 .demucs/
 separated/
+build/
 
 # Local song packs (keep folder)
 songs/*
@@ -18,7 +20,7 @@ songs/*
 *.webm
 *.m4a
 
-# Packaged demos (upload via GitHub Releases, not git)
+# Packaged demos / Mac .app (upload via GitHub Releases, not git)
 dist/
 
 # Editor / OS

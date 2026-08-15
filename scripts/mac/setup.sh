@@ -52,3 +52,4 @@ PY
 .venv-preview/bin/python -m pip install -r requirements-preview.txt
 echo "Mac preview venv ready: $ROOT/.venv-preview"
 echo "Next: bash scripts/mac/run.sh /path/to/songs-library"
+echo "Or build .app: bash scripts/mac/build-app.sh"

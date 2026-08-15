@@ -58,16 +58,23 @@ Needs Python **3.11–3.13** (not 3.14), Homebrew, and PortAudio.
 
 1. Copy this repo to the Mac.
 2. Copy a Windows `songs/` library (folders with `meta.json` + `instrumental.wav`).
-3. Install once, then run:
+3. **Operator path** — build a double-clickable app once:
 
 ```bash
 cd /path/to/Karaok
+bash scripts/mac/build-app.sh
+# → dist/Karaok Preview.app  (pick songs folder on first launch)
+```
+
+4. **Dev path** — Terminal:
+
+```bash
 bash scripts/mac/setup.sh
 bash scripts/mac/run.sh /path/to/copied-songs
 ```
 
-Browser opens `/live` (control) and `/show?preview=1` (overlay). Stop with Ctrl+C.  
-Allow Terminal microphone access when macOS asks.
+Browser opens `/live` (control) and `/show?preview=1` (overlay). Quit the `.app` or Ctrl+C to stop.  
+Allow **Karaok Preview** (or Terminal) microphone access when macOS asks.
 
 Full steps: [docs/install-mac-preview.md](docs/install-mac-preview.md).
 
@@ -81,7 +88,9 @@ songs/           local song packs (gitignored audio)
 scripts/
   run.ps1        Windows full server
   mac/setup.sh   Mac preview one-time install
-  mac/run.sh     Mac preview start
+  mac/run.sh     Mac preview start (Terminal)
+  mac/build-app.sh  Build Karaok Preview.app
+  mac/app_main.py   .app / CLI launcher
 docs/
   install-windows.md
   install-mac-preview.md
@@ -101,6 +110,6 @@ requirements-preview.txt   Mac/live-only deps
 
 ## Status
 
-Done: song packs, ingest, Demucs, melody + lyrics, live scoring, overlay HP / song card, Mac preview entry.
+Done: song packs, ingest, Demucs, melody + lyrics, live scoring, overlay HP / song card, Mac preview entry + **Karaok Preview.app** build script.
 
-Not yet: full show start/stop packaging, score reveal.
+Not yet: notarized DMG, full Prep-on-Mac, score reveal.

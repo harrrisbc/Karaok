@@ -1,9 +1,22 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+
+def detect_root() -> Path:
+    """Repo root, or Contents/Resources when frozen as a Mac .app (py2app)."""
+    if getattr(sys, "frozen", False):
+        resource = os.environ.get("RESOURCEPATH", "").strip()
+        if resource:
+            return Path(resource).resolve()
+        # .../Karaok Preview.app/Contents/MacOS/<exe> → Resources
+        return Path(sys.executable).resolve().parent.parent / "Resources"
+    return Path(__file__).resolve().parent.parent
+
+
+ROOT = detect_root()
 WEB_DIR = ROOT / "web"
 ENV_SONGS_DIR = "KARAOK_SONGS_DIR"
 

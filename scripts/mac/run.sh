@@ -41,6 +41,7 @@ echo "Control: http://${HOST}:${PORT}/live"
 echo "Overlay: http://${HOST}:${PORT}/show?preview=1"
 echo "Allow Terminal / Python microphone access if macOS asks."
 echo "Stop with Ctrl+C."
+echo "Tip: bash scripts/mac/build-app.sh → double-click dist/Karaok Preview.app"
 
 (
   sleep 1

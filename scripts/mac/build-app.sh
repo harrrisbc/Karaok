@@ -49,9 +49,11 @@ BUILD_VENV="$ROOT/.venv-appbuild"
 if [[ ! -x "$BUILD_VENV/bin/python" ]]; then
   "$PYTHON" -m venv "$BUILD_VENV"
 fi
-"$BUILD_VENV/bin/python" -m pip install -U pip setuptools wheel
+# Pin setuptools: py2app breaks on newer setuptools (File exists / collect errors).
+"$BUILD_VENV/bin/python" -m pip install -U pip wheel
+"$BUILD_VENV/bin/python" -m pip install 'setuptools==70.3.0'
 "$BUILD_VENV/bin/python" -m pip install -r requirements-preview.txt
-"$BUILD_VENV/bin/python" -m pip install py2app
+"$BUILD_VENV/bin/python" -m pip install py2app sniffio
 
 # Fresh build dirs
 rm -rf "$ROOT/build/py2app" "$ROOT/dist/Karaok Preview.app" "$ROOT/dist/Karaok Preview"

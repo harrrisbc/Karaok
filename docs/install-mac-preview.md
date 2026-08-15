@@ -11,7 +11,7 @@ Analyze songs on a Windows machine first, then copy the song library folder here
 |------|--------|
 | macOS | Apple Silicon or Intel |
 | Homebrew | https://brew.sh |
-| Python 3.11+ | `brew install python@3.11` if missing |
+| Python **3.11–3.13** | `brew install python@3.12` — do **not** use 3.14 for preview |
 | Mic + speakers/headphones | Allow Terminal microphone access when macOS asks |
 | Song library folder | Copied from Windows — see pack layout below |
 
@@ -91,6 +91,8 @@ bash scripts/mac/run.sh ~/karaok-songs
 
 | Problem | Fix |
 |---------|-----|
+| Crash on start mentioning `File` / `multipart` / `/api/songs/{pack_id}/mv` | Re-run setup, or: `.venv-preview/bin/pip install -r requirements-preview.txt` (needs `python-multipart`) |
+| Setup rejects Python 3.14 | `brew install python@3.12` then re-run `bash scripts/mac/setup.sh` |
 | `No song packs` | Library must contain subfolders with `meta.json` |
 | `Run setup first` | `bash scripts/mac/setup.sh` |
 | No mic devices | Grant mic permission; unplug/replug interface; restart Terminal |

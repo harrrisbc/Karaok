@@ -54,6 +54,8 @@ Full steps: [docs/install-windows.md](docs/install-windows.md).
 
 ### Quick start — Mac preview
 
+Needs Python **3.11–3.13** (not 3.14), Homebrew, and PortAudio.
+
 1. Copy this repo to the Mac.
 2. Copy a Windows `songs/` library (folders with `meta.json` + `instrumental.wav`).
 3. Install once, then run:

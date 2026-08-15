@@ -15,24 +15,36 @@ fi
 
 pick_python() {
   local bin
-  for bin in python3.11 python3.12 python3.13 python3; do
+  # Prefer 3.11–3.13. Skip bare `python3` if it is 3.14+ (preview stack not validated there).
+  for bin in python3.11 python3.12 python3.13; do
     if command -v "$bin" >/dev/null 2>&1; then
       echo "$bin"
       return 0
     fi
   done
+  if command -v python3 >/dev/null 2>&1; then
+    if python3 - <<'PY'
+import sys
+raise SystemExit(0 if (3, 11) <= sys.version_info < (3, 14) else 1)
+PY
+    then
+      echo python3
+      return 0
+    fi
+  fi
   return 1
 }
 
 PYTHON="$(pick_python)" || {
-  echo "Need Python 3.11 or newer (brew install python@3.11)." >&2
+  echo "Need Python 3.11–3.13 (not 3.14). Example: brew install python@3.12" >&2
   exit 1
 }
 
 "$PYTHON" - <<'PY'
 import sys
-if sys.version_info < (3, 11):
-    raise SystemExit(f"Python 3.11+ required, found {sys.version}")
+if not ((3, 11) <= sys.version_info < (3, 14)):
+    raise SystemExit(f"Python 3.11–3.13 required, found {sys.version}")
+print(f"Using {sys.executable} ({sys.version.split()[0]})")
 PY
 
 "$PYTHON" -m venv .venv-preview

@@ -93,14 +93,9 @@ def lyrics_available() -> bool:
 
 
 def _device() -> str:
-    try:
-        import torch
+    from engine.concurrency import asr_device
 
-        if torch.cuda.is_available():
-            return "cuda"
-    except Exception:
-        pass
-    return "cpu"
+    return asr_device()
 
 
 def normalize_whisper_model(name: str | None) -> str | None:
@@ -149,7 +144,7 @@ def decode_options(model_name: str, device: str) -> dict:
         "no_speech_threshold": 0.55 if large else 0.6,
     }
     if large:
-        opts["hallucination_silence_threshold"] = 2.0
+        opts["hallucination_silence_threshold"] = 5.0
     return opts
 
 
@@ -256,7 +251,7 @@ def filter_lyric_segments(segments: list[dict], title: str = "") -> list[dict]:
         lp = float(seg.get("avg_logprob") or 0.0)
         if is_credit_hallucination(text, t=start, title=title):
             continue
-        if nsp > 0.75 and lp < -0.6:
+        if nsp > 0.85 and lp < -0.6:
             continue
         if text == run_text:
             run_n += 1

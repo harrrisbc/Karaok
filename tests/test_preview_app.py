@@ -41,7 +41,10 @@ class FakeSession:
         self.trim_ms = 0.0
         self.vocal_mix = 0.0
         self.difficulty = "normal"
+        self.cents_limit = 50.0
+        self.timing_limit = 0.09
         self.healed = None
+        self.god_mode = False
         self.bg_mode = "none"
         self.bg_camera_id = ""
         self.has_mv = False
@@ -61,12 +64,15 @@ class FakeSession:
         return {
             "running": self.running,
             "calibrating": False,
+            "god_mode": self.god_mode,
             "failed": False,
             "cleared": False,
             "pack_id": self.pack_id,
             "trim_ms": self.trim_ms,
             "vocal_mix": self.vocal_mix,
             "difficulty": self.difficulty,
+            "cents_limit": round(self.cents_limit, 1),
+            "timing_limit": round(self.timing_limit, 3),
             "bg": {
                 "mode": self.bg_mode,
                 "camera_id": self.bg_camera_id,
@@ -84,10 +90,30 @@ class FakeSession:
 
     def set_difficulty(self, name):
         self.difficulty = name.strip().lower()
+        from engine.score import difficulty_params
 
+        params = difficulty_params(self.difficulty)
+        self.cents_limit = float(params["cents_limit"])
+        self.timing_limit = float(params["timing_limit"])
+
+    def set_thresholds(self, *, cents_limit=None, timing_limit=None):
+        from engine.score import clamp_cents_limit, clamp_timing_limit
+
+        if cents_limit is not None:
+            self.cents_limit = clamp_cents_limit(cents_limit)
+        if timing_limit is not None:
+            self.timing_limit = clamp_timing_limit(timing_limit)
+        return {
+            "cents_limit": self.cents_limit,
+            "timing_limit": self.timing_limit,
+        }
     def heal_hp(self, amount=10.0):
         self.healed = {"pitch": 100.0, "rhythm": 100.0}
         return self.healed
+
+    def set_god_mode(self, enabled):
+        self.god_mode = bool(enabled)
+        return {"god_mode": self.god_mode, "hp": {"pitch": 100.0, "rhythm": 100.0}}
 
     def set_bg(self, mode, camera_id=None):
         key = (mode or "none").strip().lower()
@@ -166,6 +192,9 @@ def test_preview_lists_packs_from_configured_library(tmp_path):
 
 
 def test_preview_live_api_contract(tmp_path, monkeypatch):
+    # Import app first — preview_app.configure_songs_dir() runs at import time.
+    from server.preview_app import app
+
     configure_songs_dir(str(tmp_path))
     pack = create_pack("Live Contract", source="copy")
     (pack.root / "instrumental.wav").write_bytes(b"fake-wav")
@@ -189,7 +218,6 @@ def test_preview_live_api_contract(tmp_path, monkeypatch):
         ],
     )
     monkeypatch.setattr("server.live_api.default_device_indices", lambda: (0, None))
-    from server.preview_app import app
 
     client = TestClient(app)
     devices = client.get("/api/devices").json()
@@ -209,6 +237,10 @@ def test_preview_live_api_contract(tmp_path, monkeypatch):
     assert mixed.json()["vocal_mix"] == 0.4
     healed = client.post("/api/live/heal", json={"amount": 10})
     assert healed.json()["healed"] == {"pitch": 100.0, "rhythm": 100.0}
+    god = client.post("/api/live/god", json={"enabled": True})
+    assert god.status_code == 200
+    assert god.json()["god_mode"] is True
+    assert fake.god_mode is True
     stopped = client.post("/api/live/stop")
     assert stopped.json()["running"] is False
 
@@ -219,6 +251,17 @@ def test_preview_live_api_contract(tmp_path, monkeypatch):
     assert bg.status_code == 200
     assert bg.json()["bg"]["mode"] == "camera"
     assert bg.json()["bg"]["camera_id"] == "dev-1"
+
+    thresholds = client.post(
+        "/api/live/thresholds",
+        json={"cents_limit": 70, "timing_limit_ms": 120},
+    )
+    assert thresholds.status_code == 200
+    body = thresholds.json()
+    assert body["cents_limit"] == 70.0
+    assert abs(body["timing_limit"] - 0.12) < 1e-9
+    assert fake.cents_limit == 70.0
+    assert abs(fake.timing_limit - 0.12) < 1e-9
 
 
 def test_pack_mv_route_404_and_200(tmp_path):

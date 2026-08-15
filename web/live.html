@@ -11,7 +11,7 @@
     <header>
       <p class="kicker">OPERATOR DESK</p>
       <h1>Live</h1>
-      <p class="lede">呢頁係操作台：揀歌、Start/Stop、trim、guide vocal、Show 背景（MV 或 capture card / camera）。Karaok server 要喺有 mic / 伴奏輸出嗰部機跑。<code>/show</code> 係 1920×1080 show surface（MV 永遠 mute，伴奏由 PortAudio 出）。只播伴奏；Guide vocal 可以加返 Demucs 人聲。Mic 用嚟評分，唔會從呢部 PC 返出喇叭。Audio team delay FOH 人聲 = 下面個數字。</p>
+      <p class="lede">呢頁係操作台：揀歌、Start/Stop、trim、guide vocal、Show 背景（MV 或 capture card / camera）。Karaok server 要喺有 mic / 伴奏輸出嗰部機跑。<code>/show</code> 係 1920×1080 show surface（MV 永遠 mute，伴奏由 PortAudio 出）。只播伴奏；Guide vocal 可以加返 Demucs 人聲。Mic 用嚟評分，唔會從呢部 PC 返出喇叭。Audio team delay FOH 人聲 = 下面個數字。想驗證藍 hit：開 Guide vocal + Calibrate，唔好用 phone 播 vocals 入 mic（latency 會令幾乎全部 miss）。</p>
     </header>
 
     <section class="foh" id="foh">
@@ -44,13 +44,21 @@
         <input type="range" id="trim" min="-80" max="80" value="0" />
         <span id="trimVal">0</span>
       </label>
-      <label>Difficulty — damage threshold (Easy = forgiving)
+      <label>Difficulty preset — fills pitch + tempo thresholds
         <select id="difficulty">
-          <option value="easy">Easy (±80¢ · slow drain)</option>
-          <option value="normal" selected>Normal (±50¢)</option>
-          <option value="hard">Hard (±35¢ · fast drain)</option>
-          <option value="expert">Expert (±25¢ · brutal)</option>
+          <option value="easy">Easy (±80¢ · ±150 ms · slow drain)</option>
+          <option value="normal" selected>Normal (±50¢ · ±90 ms)</option>
+          <option value="hard">Hard (±35¢ · ±60 ms · fast drain)</option>
+          <option value="expert">Expert (±25¢ · ±45 ms · brutal)</option>
         </select>
+      </label>
+      <label>Pitch threshold (±¢) — damage outside this window
+        <input type="range" id="pitchThresh" min="15" max="120" step="5" value="50" />
+        <span id="pitchThreshVal">±50¢</span>
+      </label>
+      <label>Tempo threshold (±ms) — EARLY/LATE outside this window
+        <input type="range" id="tempoThresh" min="30" max="250" step="5" value="90" />
+        <span id="tempoThreshVal">±90 ms</span>
       </label>
       <label>Show background
         <select id="bgMode">
@@ -63,9 +71,12 @@
         <select id="bgCamera"></select>
       </label>
       <p class="hint">MV 跟伴奏 <code>playback_t</code>；Camera 用呢部機（或 /show 嗰部機）嘅 webcam / capture card。要 grant camera 權限喺 <code>/show</code>。</p>
-      <p class="hint" id="diffHint">Normal: pitch damage beyond ±50 cents; EARLY/LATE ±90 ms; drain 10 HP/s.</p>
+      <p class="hint" id="diffHint">Pitch ±50¢ · Tempo ±90 ms · drain from Normal preset.</p>
       <div class="row">
         <button type="button" id="healHp" title="Add +10 to both HP bars during a take">HP +10</button>
+        <label class="inline" title="Demo cheat: HP never drains / never fail">
+          <input type="checkbox" id="godMode" /> Demo never-die
+        </label>
         <button type="button" id="calibrate">Calibrate latency</button>
         <span class="status-line" id="calibration" hidden></span>
       </div>

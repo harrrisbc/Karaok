@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>KARAOK — Show Overlay</title>
-  <link rel="stylesheet" href="/web/overlay.css?v=11" />
+  <link rel="stylesheet" href="/web/overlay.css?v=16" />
 </head>
 <body>
   <div id="stage">
@@ -75,6 +75,7 @@
         <div class="highway-glow" aria-hidden="true"></div>
         <div class="lane" id="pitchLane">
           <div class="notes" id="notesLayer" aria-hidden="true"></div>
+          <canvas class="pitch-trail" id="pitchTrail" aria-hidden="true"></canvas>
           <div class="now-line" aria-hidden="true"></div>
           <div class="playhead" id="playhead" aria-hidden="true">
             <div class="coin"></div>
@@ -88,6 +89,6 @@
       </section>
     </div>
   </div>
-  <script src="/web/overlay.js?v=11"></script>
+  <script src="/web/overlay.js?v=16"></script>
 </body>
 </html>

@@ -20,6 +20,15 @@ def test_cents_unison_and_semitone():
     assert abs(cents_error(440.0 * (2 ** (1 / 12)), 440.0) - 100.0) < 0.5
 
 
+def test_cents_error_folds_octave():
+    # Same pitch class one octave up must count as in-tune, not ±1200¢
+    assert abs(cents_error(880.0, 440.0)) < 1.0
+    assert abs(cents_error(220.0, 440.0)) < 1.0
+    from engine.score import cents_error_raw
+
+    assert abs(cents_error_raw(880.0, 440.0) - 1200.0) < 1.0
+
+
 def test_align_time_formula():
     # playback 1.000s, hear track 28ms late, mic 12ms late, trim 0
     # → compare at 1.000 - 0.028 + 0.012 = 0.984
@@ -155,6 +164,23 @@ def test_hp_manual_heal():
     assert hp.rhythm == 100.0
 
 
+def test_hp_god_mode_never_drains():
+    hp = HealthPoints(invincible=True)
+    hp.tick(voiced=True, cents=-200.0, badges=["flat", "early", "late"], dt=30.0)
+    assert hp.pitch == 100.0
+    assert hp.rhythm == 100.0
+    assert hp.dead is False
+    assert hp.fail_reason is None
+    hp.pitch = 0.0
+    assert hp.dead is False
+    hp.set_invincible(False)
+    assert hp.dead is True
+    hp.set_invincible(True)
+    assert hp.pitch == 100.0
+    assert hp.rhythm == 100.0
+    assert hp.dead is False
+
+
 def test_hp_custom_cents_limit_and_drain():
     easy = HealthPoints(cents_limit=80.0, drain_per_sec=5.0)
     easy.tick(voiced=True, cents=-60.0, badges=["flat"], dt=1.0)
@@ -172,6 +198,17 @@ def test_difficulty_presets():
     assert float(easy["cents_limit"]) > float(hard["cents_limit"])
     assert float(easy["drain_per_sec"]) < float(hard["drain_per_sec"])
     assert difficulty_params("nope")["id"] == "normal"
+
+
+def test_clamp_thresholds():
+    from engine.score import clamp_cents_limit, clamp_timing_limit
+
+    assert clamp_cents_limit(10) == 15.0
+    assert clamp_cents_limit(200) == 120.0
+    assert clamp_cents_limit(50) == 50.0
+    assert abs(clamp_timing_limit(0.01) - 0.03) < 1e-9
+    assert abs(clamp_timing_limit(0.5) - 0.25) < 1e-9
+    assert abs(clamp_timing_limit(0.09) - 0.09) < 1e-9
 
 
 def test_hp_pitch_zero_is_dead():

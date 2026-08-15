@@ -66,7 +66,7 @@ def test_large_whisper_uses_greedy_beam():
     assert decode_options("small", "cuda")["beam_size"] == 5
     assert decode_options("large-v3", "cuda")["no_speech_threshold"] == 0.55
     assert decode_options("small", "cuda")["no_speech_threshold"] == 0.6
-    assert decode_options("large-v3", "cuda")["hallucination_silence_threshold"] == 2.0
+    assert decode_options("large-v3", "cuda")["hallucination_silence_threshold"] == 5.0
     assert "hallucination_silence_threshold" not in decode_options("small", "cuda")
     assert decode_options("medium", "cuda")["fp16"] is True
     assert decode_options("small", "cpu")["fp16"] is False
@@ -106,6 +106,29 @@ def test_collapse_repeated_loop_lines():
     texts = [s["text"] for s in kept]
     assert texts.count("祝你生日快樂") <= 2
     assert texts[-1] == "做策劃之男"
+
+
+def test_filter_keeps_mid_confidence_solo_edge_line():
+    from engine.lyrics import filter_lyric_segments
+
+    segs = [
+        {
+            "start": 40.0,
+            "end": 42.5,
+            "text": "再唱多一句",
+            "no_speech_prob": 0.78,
+            "avg_logprob": -0.7,
+        },
+        {
+            "start": 62.0,
+            "end": 64.0,
+            "text": "noise",
+            "no_speech_prob": 0.92,
+            "avg_logprob": -0.9,
+        },
+    ]
+    kept = filter_lyric_segments(segs)
+    assert [s["text"] for s in kept] == ["再唱多一句"]
 
 
 def test_release_cuda_does_not_raise():

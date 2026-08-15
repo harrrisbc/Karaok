@@ -44,10 +44,38 @@ def difficulty_params(name: str | None) -> dict[str, float | str]:
     preset = DIFFICULTY_PRESETS[key]
     return {"id": key, **preset}
 
-def cents_error(sung_hz: float, expected_hz: float) -> float:
+
+def clamp_cents_limit(value: float) -> float:
+    return float(max(15.0, min(120.0, float(value))))
+
+
+def clamp_timing_limit(value: float) -> float:
+    """Clamp timing threshold in seconds (± window for EARLY/LATE)."""
+    return float(max(0.03, min(0.25, float(value))))
+
+
+def cents_error_raw(sung_hz: float, expected_hz: float) -> float:
+    """Signed cents with no octave folding (diagnostic / legacy)."""
     if sung_hz <= 0 or expected_hz <= 0:
         return 0.0
     return 1200.0 * math.log2(sung_hz / expected_hz)
+
+
+def cents_error(sung_hz: float, expected_hz: float, *, octaves: int = 2) -> float:
+    """Signed cents after folding sung pitch into the nearest octave of expected.
+
+    Live YIN and melody pyin often disagree by ±1 octave; without folding,
+    |cents| ≈ 1200 and blue hits almost never light.
+    """
+    if sung_hz <= 0 or expected_hz <= 0:
+        return 0.0
+    best = cents_error_raw(sung_hz, expected_hz)
+    for k in range(1, max(0, int(octaves)) + 1):
+        for factor in (2.0**k, 0.5**k):
+            cand = cents_error_raw(sung_hz * factor, expected_hz)
+            if abs(cand) < abs(best):
+                best = cand
+    return best
 
 
 def align_time(
@@ -210,18 +238,24 @@ class HealthPoints:
         *,
         cents_limit: float = PITCH_CENTS_LIMIT,
         drain_per_sec: float = HP_DRAIN_PER_SEC,
+        invincible: bool = False,
     ) -> None:
         self.pitch = 100.0
         self.rhythm = 100.0
         self.cents_limit = float(cents_limit)
         self.drain_per_sec = float(drain_per_sec)
+        self.invincible = bool(invincible)
 
     @property
     def dead(self) -> bool:
+        if self.invincible:
+            return False
         return self.pitch <= 0.0 or self.rhythm <= 0.0
 
     @property
     def fail_reason(self) -> str | None:
+        if self.invincible:
+            return None
         if self.pitch <= 0.0:
             return "pitch"
         if self.rhythm <= 0.0:
@@ -231,6 +265,12 @@ class HealthPoints:
     def configure(self, *, cents_limit: float, drain_per_sec: float) -> None:
         self.cents_limit = float(cents_limit)
         self.drain_per_sec = float(drain_per_sec)
+
+    def set_invincible(self, enabled: bool) -> None:
+        self.invincible = bool(enabled)
+        if self.invincible:
+            self.pitch = 100.0
+            self.rhythm = 100.0
 
     def heal(self, amount: float = 10.0) -> None:
         """Add HP to both bars (operator mercy). Does not un-fail a stopped take."""
@@ -246,7 +286,7 @@ class HealthPoints:
         badges: list[str],
         dt: float,
     ) -> None:
-        if self.dead or dt <= 0:
+        if self.invincible or self.dead or dt <= 0:
             return
         if voiced and cents is not None and abs(cents) >= self.cents_limit:
             self.pitch = max(0.0, self.pitch - self.drain_per_sec * dt)

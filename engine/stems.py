@@ -26,6 +26,11 @@ def demucs_available() -> bool:
 
 
 def detect_device() -> str:
+    from engine.concurrency import live_audio_active
+
+    # PortAudio + CUDA Demucs in one process crashes on Windows while Live runs.
+    if live_audio_active():
+        return "cpu"
     try:
         import torch
 

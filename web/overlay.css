@@ -89,13 +89,15 @@ html.preview-fit #stage {
   transform-origin: center center;
 }
 
-/* —— Song + singer (middle left). Logos stay in OBS. —— */
+/* —— Song + singer (top-left). Width follows title length. —— */
 .word-card {
   position: absolute;
-  left: 48px;
-  top: 360px;
-  width: 280px;
-  padding: 16px 18px 14px;
+  left: 36px;
+  top: 28px;
+  width: max-content;
+  max-width: min(1100px, calc(100% - 320px));
+  min-width: 220px;
+  padding: 14px 28px 12px;
   border-radius: 12px;
   background: var(--panel-strong);
   border: 2px solid var(--gold);
@@ -114,10 +116,9 @@ html.preview-fit #stage {
 .word-title {
   font-size: 28px;
   font-weight: 800;
-  line-height: 1.2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .word-singer {
@@ -125,9 +126,8 @@ html.preview-fit #stage {
   font-size: 16px;
   color: var(--muted);
   letter-spacing: 0.06em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* —— Bottom left: badges + HP + timer —— */
@@ -430,30 +430,62 @@ html.preview-fit #stage {
 }
 
 .lyric-line {
+  position: relative;
   flex: 1;
-  font-size: 42px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  line-height: 1.25;
+  margin: 0;
+  font-size: 44px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.3;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.lyric-line .ch {
-  display: inline-block;
-  color: rgba(255, 255, 255, 0.42);
-  transition: color 80ms linear, text-shadow 80ms linear;
+/* Classic Canto KTV wipe: white base + purple fill L→R */
+.lyric-line.ktv {
+  display: inline-grid;
+  justify-items: center;
+  max-width: 100%;
+  overflow: visible;
+  text-overflow: clip;
 }
 
-.lyric-line .ch.on {
+.lyric-line.ktv .ktv-base,
+.lyric-line.ktv .ktv-fill {
+  grid-area: 1 / 1;
+  margin: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+}
+
+.lyric-line.ktv .ktv-base {
   color: #fff;
-  text-shadow: 0 0 12px rgba(94, 240, 255, 0.55);
+  -webkit-text-stroke: 1.5px rgba(8, 4, 20, 0.92);
+  paint-order: stroke fill;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
 }
 
-.lyric-line .ch.done {
-  color: var(--cyan);
+.lyric-line.ktv .ktv-fill {
+  color: #d4c4ff;
+  -webkit-text-stroke: 2px #4a2ad4;
+  paint-order: stroke fill;
+  text-shadow:
+    0 0 10px rgba(120, 90, 255, 0.85),
+    0 0 22px rgba(90, 60, 220, 0.55);
+  /* progress 0–1 → reveal from left */
+  clip-path: inset(0 calc((1 - var(--ktv-p, 0)) * 100%) 0 0);
+  will-change: clip-path;
+}
+
+.lyric-line.ktv.is-plain .ktv-fill {
+  clip-path: inset(0 100% 0 0);
 }
 
 .lyric-ghost {
@@ -463,7 +495,9 @@ html.preview-fit #stage {
   font-weight: 600;
   letter-spacing: 0.04em;
   line-height: 1.25;
-  color: rgba(255, 255, 255, 0.38);
+  color: rgba(255, 255, 255, 0.55);
+  -webkit-text-stroke: 1px rgba(0, 0, 0, 0.65);
+  paint-order: stroke fill;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
@@ -493,7 +527,7 @@ html.preview-fit #stage {
 
 .lane {
   position: relative;
-  height: 148px;
+  height: 224px;
   border-radius: 18px;
   overflow: hidden;
   background:
@@ -505,12 +539,13 @@ html.preview-fit #stage {
   position: absolute;
   inset: 0;
   overflow: visible;
+  z-index: 1;
 }
 
 .note-bar {
   position: absolute;
-  height: 16px;
-  border-radius: 6px;
+  height: 24px;
+  border-radius: 8px;
   background: var(--white-note);
   box-shadow: 0 0 8px rgba(255, 255, 255, 0.25);
   will-change: transform;
@@ -533,7 +568,7 @@ html.preview-fit #stage {
 
 .now-line {
   position: absolute;
-  left: 118px;
+  left: 40%;
   top: 8px;
   bottom: 8px;
   width: 3px;
@@ -544,7 +579,7 @@ html.preview-fit #stage {
 
 .playhead {
   position: absolute;
-  left: 72px;
+  left: calc(40% - 36px);
   top: 50%;
   width: 72px;
   height: 72px;
@@ -608,9 +643,9 @@ html.preview-fit #stage {
 
 .sung-cursor {
   position: absolute;
-  left: 118px;
-  width: 10px;
-  height: 10px;
+  left: 40%;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: var(--cyan);
   box-shadow: 0 0 14px rgba(94, 240, 255, 0.8);
@@ -619,6 +654,15 @@ html.preview-fit #stage {
   z-index: 3;
   transition: top 80ms linear;
   opacity: 0.85;
+}
+
+.pitch-trail {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
 }
 
 .highway-meta {

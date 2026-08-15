@@ -8,11 +8,12 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from engine.concurrency import gpu_job_blocks_live
 from engine.devices import default_device_indices, list_devices
 from engine.live import session
 from engine.pack import get_pack, list_packs
 from engine.paths import WEB_DIR
-from engine.score import DIFFICULTY_PRESETS, difficulty_params
+from engine.score import DIFFICULTY_PRESETS, clamp_cents_limit, clamp_timing_limit, difficulty_params
 
 NO_CACHE = {
     "Cache-Control": "no-store, no-cache, must-revalidate",
@@ -60,6 +61,8 @@ class LiveStartBody(BaseModel):
     trim_ms: float = Field(default=0, ge=-80, le=80)
     vocal_mix: float = Field(default=0, ge=0, le=1)
     difficulty: str = "normal"
+    cents_limit: float | None = Field(default=None, ge=15, le=120)
+    timing_limit_ms: float | None = Field(default=None, ge=30, le=250)
     singer: str | None = None
 
 
@@ -81,8 +84,17 @@ class LiveDifficultyBody(BaseModel):
     difficulty: str
 
 
+class LiveThresholdsBody(BaseModel):
+    cents_limit: float | None = Field(default=None, ge=15, le=120)
+    timing_limit_ms: float | None = Field(default=None, ge=30, le=250)
+
+
 class LiveHealBody(BaseModel):
     amount: float = Field(default=10.0, ge=1.0, le=100.0)
+
+
+class LiveGodBody(BaseModel):
+    enabled: bool = True
 
 
 class LiveBgBody(BaseModel):
@@ -193,9 +205,23 @@ def register_live_routes(app: FastAPI) -> None:
             get_pack(body.pack_id)
         except FileNotFoundError:
             raise HTTPException(404, "song pack 唔存在") from None
+        try:
+            from engine.jobs import runner
+
+            blocked = gpu_job_blocks_live(runner.active())
+        except Exception:
+            blocked = None
+        if blocked:
+            raise HTTPException(409, blocked) from None
         if body.difficulty.strip().lower() not in DIFFICULTY_PRESETS:
             raise HTTPException(400, f"unknown difficulty: {body.difficulty}") from None
         session.set_difficulty(body.difficulty)
+        if body.cents_limit is not None or body.timing_limit_ms is not None:
+            timing = None if body.timing_limit_ms is None else body.timing_limit_ms / 1000.0
+            session.set_thresholds(
+                cents_limit=None if body.cents_limit is None else clamp_cents_limit(body.cents_limit),
+                timing_limit=None if timing is None else clamp_timing_limit(timing),
+            )
         try:
             return session.start(
                 body.pack_id,
@@ -242,11 +268,29 @@ def register_live_routes(app: FastAPI) -> None:
         status["difficulty_params"] = difficulty_params(key)
         return status
 
+    @app.post("/api/live/thresholds")
+    def live_thresholds(body: LiveThresholdsBody) -> dict:
+        if body.cents_limit is None and body.timing_limit_ms is None:
+            raise HTTPException(400, "cents_limit or timing_limit_ms required") from None
+        timing = None if body.timing_limit_ms is None else body.timing_limit_ms / 1000.0
+        session.set_thresholds(
+            cents_limit=None if body.cents_limit is None else clamp_cents_limit(body.cents_limit),
+            timing_limit=None if timing is None else clamp_timing_limit(timing),
+        )
+        return session.status()
+
     @app.post("/api/live/heal")
     def live_heal(body: LiveHealBody) -> dict:
         hp = session.heal_hp(body.amount)
         status = session.status()
         status["healed"] = hp
+        return status
+
+    @app.post("/api/live/god")
+    def live_god(body: LiveGodBody) -> dict:
+        cheat = session.set_god_mode(body.enabled)
+        status = session.status()
+        status["god"] = cheat
         return status
 
     @app.post("/api/live/bg")

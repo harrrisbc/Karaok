@@ -6,6 +6,7 @@ from typing import Any
 
 import numpy as np
 
+from engine.concurrency import set_live_audio
 from engine.pack import SongPack, get_pack
 from engine.pitch import yin_f0
 from engine.score import (
@@ -103,9 +104,11 @@ class LiveSession:
         self._vocals: np.ndarray | None = None
         self._in_buf = np.zeros(YIN_FRAME, dtype=np.float32)
         self._skill = RunningSkill()
+        self.god_mode = False
         self._hp = HealthPoints(
             cents_limit=self.cents_limit,
             drain_per_sec=self.drain_per_sec,
+            invincible=False,
         )
         self._sr = TARGET_SR
         self.calibrating = False
@@ -115,6 +118,7 @@ class LiveSession:
             return {
                 "running": self.running,
                 "calibrating": self.calibrating,
+                "god_mode": self.god_mode,
                 "failed": self.failed,
                 "cleared": self.cleared,
                 "pack_id": self.pack_id,
@@ -198,12 +202,50 @@ class LiveSession:
                 drain_per_sec=self.drain_per_sec,
             )
 
+    def set_thresholds(
+        self,
+        *,
+        cents_limit: float | None = None,
+        timing_limit: float | None = None,
+    ) -> dict[str, float]:
+        from engine.score import clamp_cents_limit, clamp_timing_limit
+
+        with self._lock:
+            if cents_limit is not None:
+                self.cents_limit = clamp_cents_limit(cents_limit)
+                self._hp.configure(
+                    cents_limit=self.cents_limit,
+                    drain_per_sec=self.drain_per_sec,
+                )
+            if timing_limit is not None:
+                self.timing_limit = clamp_timing_limit(timing_limit)
+            return {
+                "cents_limit": float(self.cents_limit),
+                "timing_limit": float(self.timing_limit),
+            }
+
     def heal_hp(self, amount: float = 10.0) -> dict[str, float]:
         with self._lock:
             self._hp.heal(amount)
             if self.latest.get("type") == "frame":
                 self.latest = {**self.latest, "hp": self._hp.as_dict(), "failed": self._hp.dead}
             return self._hp.as_dict()
+
+    def set_god_mode(self, enabled: bool) -> dict[str, Any]:
+        """Demo cheat: no HP drain / never fail while on."""
+        with self._lock:
+            self.god_mode = bool(enabled)
+            self._hp.set_invincible(self.god_mode)
+            if self.god_mode:
+                self.failed = False
+            if self.latest.get("type") == "frame":
+                self.latest = {
+                    **self.latest,
+                    "hp": self._hp.as_dict(),
+                    "failed": self._hp.dead,
+                    "fail_reason": self._hp.fail_reason,
+                }
+            return {"god_mode": self.god_mode, "hp": self._hp.as_dict()}
 
     def calibrate(
         self,
@@ -298,6 +340,7 @@ class LiveSession:
             self._hp = HealthPoints(
                 cents_limit=self.cents_limit,
                 drain_per_sec=self.drain_per_sec,
+                invincible=self.god_mode,
             )
             self.running = True
             self._in_buf[:] = 0
@@ -383,6 +426,7 @@ class LiveSession:
                 self.output_ms = 20.0
             if self.input_ms <= 0:
                 self.input_ms = 10.0
+        set_live_audio(True)
         return self.status()
 
     def _on_out(self, outdata, frames: int) -> None:
@@ -486,6 +530,7 @@ class LiveSession:
             self._instrumental = None
             self._vocals = None
             self.latest = {"type": "idle"}
+        set_live_audio(False)
         for stream in streams:
             try:
                 stream.stop()

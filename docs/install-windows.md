@@ -87,13 +87,16 @@ CLI:
 
 Only ingest songs you have the right to use.
 
+Whisper runs on the vocal stem. Guitar solo / long instrumental gaps can still drop a line or two at the edges — prefer LRCLIB or **Align lyrics** when you have the official text.
+
 ## 5. Live / FOH notes
 
 1. `/live`: pick output (instrumental) and input (mic). Never route PC mic back to speakers.
 2. Start a pack → read **FOH VOCAL DELAY** (`output_ms`).
 3. Delay FOH vocal by that ms; foldback / direct vocal stays 0 ms.
 4. Align trim on `/live` is scoring-only — do not copy it to the desk.
-5. Prep **Analyze** and Live **Start** can run together (different packs). Only one Prep job at a time. GPU load during Demucs/Whisper may still hitch playback.
+5. Prep **Analyze** and Live **Start** can overlap for **melody** (CPU). While Whisper/Demucs use the GPU, Live Start returns 409 — wait for that step to finish (otherwise Windows can hard-crash the server). If Live is already playing, a new Analyze runs Whisper on **CPU** (slower, safer).
+6. **Blue-hit ground truth:** use `/live` **Guide vocal** mix + **Calibrate latency** on the same PC audio chain. Do **not** judge pitch hits by playing `vocals.wav` from a phone into the mic — that adds unknown delay so most notes miss even when the chart is correct.
 
 More: [phase-3-live-scoring](intent/phase-3-live-scoring.md), [phase-4-overlay](intent/phase-4-overlay.md).
 

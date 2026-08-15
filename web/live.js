@@ -8,26 +8,51 @@ const trimVal = document.getElementById("trimVal");
 const vocalMixEl = document.getElementById("vocalMix");
 const vocalMixVal = document.getElementById("vocalMixVal");
 const difficultyEl = document.getElementById("difficulty");
+const pitchThreshEl = document.getElementById("pitchThresh");
+const pitchThreshVal = document.getElementById("pitchThreshVal");
+const tempoThreshEl = document.getElementById("tempoThresh");
+const tempoThreshVal = document.getElementById("tempoThreshVal");
 const bgModeEl = document.getElementById("bgMode");
 const bgCameraEl = document.getElementById("bgCamera");
 const bgCamWrap = document.getElementById("bgCamWrap");
 const diffHint = document.getElementById("diffHint");
 const healBtn = document.getElementById("healHp");
+const godModeEl = document.getElementById("godMode");
 const fohMs = document.getElementById("fohMs");
 const lat = document.getElementById("lat");
 const startBtn = document.getElementById("start");
 const calibrateBtn = document.getElementById("calibrate");
 const calibrationEl = document.getElementById("calibration");
 
-const DIFF_HINTS = {
-  easy: "Easy: pitch damage beyond ±80¢; EARLY/LATE ±150 ms; drain 6 HP/s.",
-  normal: "Normal: pitch damage beyond ±50¢; EARLY/LATE ±90 ms; drain 10 HP/s.",
-  hard: "Hard: pitch damage beyond ±35¢; EARLY/LATE ±60 ms; drain 14 HP/s.",
-  expert: "Expert: pitch damage beyond ±25¢; EARLY/LATE ±45 ms; drain 18 HP/s.",
+const DIFF_PRESETS = {
+  easy: { cents: 80, tempoMs: 150, drain: 6 },
+  normal: { cents: 50, tempoMs: 90, drain: 10 },
+  hard: { cents: 35, tempoMs: 60, drain: 14 },
+  expert: { cents: 25, tempoMs: 45, drain: 18 },
 };
 
+function setPitchThresh(cents) {
+  const v = Math.max(15, Math.min(120, Math.round(Number(cents) || 50)));
+  pitchThreshEl.value = String(v);
+  pitchThreshVal.textContent = `±${v}¢`;
+}
+
+function setTempoThresh(ms) {
+  const v = Math.max(30, Math.min(250, Math.round(Number(ms) || 90)));
+  tempoThreshEl.value = String(v);
+  tempoThreshVal.textContent = `±${v} ms`;
+}
+
 function updateDiffHint() {
-  diffHint.textContent = DIFF_HINTS[difficultyEl.value] || DIFF_HINTS.normal;
+  const preset = DIFF_PRESETS[difficultyEl.value] || DIFF_PRESETS.normal;
+  diffHint.textContent = `Pitch ±${pitchThreshEl.value}¢ · Tempo ±${tempoThreshEl.value} ms · drain ${preset.drain} HP/s (from ${difficultyEl.value} preset).`;
+}
+
+function applyPresetToSliders() {
+  const preset = DIFF_PRESETS[difficultyEl.value] || DIFF_PRESETS.normal;
+  setPitchThresh(preset.cents);
+  setTempoThresh(preset.tempoMs);
+  updateDiffHint();
 }
 function setTrim(value) {
   const trim = Math.max(-80, Math.min(80, Number(value) || 0));
@@ -46,6 +71,8 @@ function savePrefs() {
       singer: singerEl.value,
       vocalMix: vocalMixEl.value,
       difficulty: difficultyEl.value,
+      pitchThresh: pitchThreshEl.value,
+      tempoThresh: tempoThreshEl.value,
       bgMode: bgModeEl.value,
       bgCamera: bgCameraEl.value,
     }),
@@ -87,9 +114,20 @@ function applyStatus(s) {
   } else {
     fohMs.textContent = "— ms";
   }
+  if (godModeEl && typeof s.god_mode === "boolean") {
+    godModeEl.checked = s.god_mode;
+  }
+  const godTag = s.god_mode ? " · GOD" : "";
   lat.textContent = s.running
-    ? `input ${Number(s.input_ms).toFixed(1)} ms · output ${Number(s.output_ms).toFixed(1)} ms · trim ${s.trim_ms} · guide ${Math.round((s.vocal_mix || 0) * 100)}% · ${s.difficulty || "normal"} · HP ${s.frame?.hp?.pitch ?? "—"}/${s.frame?.hp?.rhythm ?? "—"} · bg ${s.bg?.mode || "none"}`
-    : "stopped — pick devices, then Start";
+    ? `input ${Number(s.input_ms).toFixed(1)} ms · output ${Number(s.output_ms).toFixed(1)} ms · trim ${s.trim_ms} · guide ${Math.round((s.vocal_mix || 0) * 100)}% · pitch ±${s.cents_limit ?? pitchThreshEl.value}¢ · tempo ±${Math.round((s.timing_limit ?? Number(tempoThreshEl.value) / 1000) * 1000)} ms · HP ${s.frame?.hp?.pitch ?? "—"}/${s.frame?.hp?.rhythm ?? "—"} · bg ${s.bg?.mode || "none"}${godTag}`
+    : `stopped — pick devices, then Start${godTag}`;
+  if (s.cents_limit != null && document.activeElement !== pitchThreshEl) {
+    setPitchThresh(s.cents_limit);
+  }
+  if (s.timing_limit != null && document.activeElement !== tempoThreshEl) {
+    setTempoThresh(Math.round(Number(s.timing_limit) * 1000));
+  }
+  updateDiffHint();
   if (s.bg?.mode && document.activeElement !== bgModeEl) {
     if (bgModeEl.value !== s.bg.mode) bgModeEl.value = s.bg.mode;
     updateBgUi();
@@ -123,6 +161,12 @@ async function loadDevices() {
   if (prefs.channel) channelEl.value = prefs.channel;
   if (prefs.vocalMix != null) vocalMixEl.value = prefs.vocalMix;
   if (prefs.difficulty) difficultyEl.value = prefs.difficulty;
+  if (prefs.pitchThresh != null || prefs.tempoThresh != null) {
+    setPitchThresh(prefs.pitchThresh ?? pitchThreshEl.value);
+    setTempoThresh(prefs.tempoThresh ?? tempoThreshEl.value);
+  } else {
+    applyPresetToSliders();
+  }
   if (localStorage.getItem("karaok-trim-ms") != null) {
     setTrim(localStorage.getItem("karaok-trim-ms"));
   }
@@ -137,7 +181,7 @@ async function loadPacks() {
     ? ready
         .map(
           (s) =>
-            `<option value="${s.id}" data-singer="${s.singer || ""}" data-has-mv="${s.has_mv ? "1" : "0"}">${s.title} (${s.status})${s.has_mv ? " · MV" : ""}</option>`,
+            `<option value="${s.id}" data-singer="${s.singer || ""}" data-has-mv="${s.has_mv ? "1" : "0"}">${s.title}${s.has_mv ? " · MV" : ""}</option>`,
         )
         .join("")
     : `<option value="">No packs with instrumental</option>`;
@@ -223,14 +267,20 @@ startBtn.addEventListener("click", async () => {
     trim_ms: Number(trimEl.value),
     vocal_mix: Number(vocalMixEl.value || 0) / 100,
     difficulty: difficultyEl.value || "normal",
+    cents_limit: Number(pitchThreshEl.value),
+    timing_limit_ms: Number(tempoThreshEl.value),
     singer: singerEl.value.trim(),
   };
-  const status = await jsonFetch("/api/live/start", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  applyStatus(status);
+  try {
+    const status = await jsonFetch("/api/live/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    applyStatus(status);
+  } catch (err) {
+    lat.textContent = String(err.message || err);
+  }
 });
 
 document.getElementById("stop").addEventListener("click", async () => {
@@ -328,7 +378,7 @@ vocalMixEl.addEventListener("input", () => {
 });
 
 difficultyEl.addEventListener("change", async () => {
-  updateDiffHint();
+  applyPresetToSliders();
   savePrefs();
   try {
     applyStatus(
@@ -338,9 +388,46 @@ difficultyEl.addEventListener("change", async () => {
         body: JSON.stringify({ difficulty: difficultyEl.value }),
       }),
     );
+    await pushThresholds();
   } catch {
     /* idle */
   }
+});
+
+async function pushThresholds() {
+  updateDiffHint();
+  savePrefs();
+  try {
+    applyStatus(
+      await jsonFetch("/api/live/thresholds", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cents_limit: Number(pitchThreshEl.value),
+          timing_limit_ms: Number(tempoThreshEl.value),
+        }),
+      }),
+    );
+  } catch {
+    /* idle */
+  }
+}
+
+pitchThreshEl.addEventListener("input", () => {
+  setPitchThresh(pitchThreshEl.value);
+  updateDiffHint();
+});
+pitchThreshEl.addEventListener("change", () => {
+  setPitchThresh(pitchThreshEl.value);
+  pushThresholds();
+});
+tempoThreshEl.addEventListener("input", () => {
+  setTempoThresh(tempoThreshEl.value);
+  updateDiffHint();
+});
+tempoThreshEl.addEventListener("change", () => {
+  setTempoThresh(tempoThreshEl.value);
+  pushThresholds();
 });
 
 healBtn.addEventListener("click", async () => {
@@ -356,6 +443,20 @@ healBtn.addEventListener("click", async () => {
       lat.textContent = `${lat.textContent} · healed → ${hp.pitch}/${hp.rhythm}`;
     }
   } catch (err) {
+    lat.textContent = String(err.message || err);
+  }
+});
+
+godModeEl?.addEventListener("change", async () => {
+  try {
+    const status = await jsonFetch("/api/live/god", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: godModeEl.checked }),
+    });
+    applyStatus(status);
+  } catch (err) {
+    godModeEl.checked = !godModeEl.checked;
     lat.textContent = String(err.message || err);
   }
 });

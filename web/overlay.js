@@ -145,11 +145,15 @@ async function applyBg(bg, running) {
   hideBgLayers();
 }
 
-const NOW_X = 118; // matches CSS .now-line left
-const LANE_H = 148;
+const NOW_X_RATIO = 0.4;
+const LANE_H = 224;
+const NOTE_H = 24;
 const PX_PER_SEC = 160;
+const TRAIL_WINDOW_SEC = 1.6;
 /** |cents| under this while on the note counts as a hit sample */
 const HIT_CENTS = 50;
+const MIDI_PAD = 2;
+const MIDI_MIN_SPAN = 12;
 
 /** @type {{ id: number, start: number, dur: number, midi: number, el: HTMLDivElement, hitSamples: number, missSamples: number, verdict: null | "hit" | "miss" }[]} */
 let notePool = [];
@@ -158,6 +162,10 @@ let songStartedAt = performance.now();
 let timerTotalSec = 0;
 let lyricChars = [];
 let lyricProgress = 0;
+/** @type {{ t: number, midi: number }[]} */
+let pitchTrail = [];
+let midiLo = 48;
+let midiHi = 72;
 
 function setBadges(active) {
   document.querySelectorAll(".badge").forEach((el) => {
@@ -165,18 +173,155 @@ function setBadges(active) {
   });
 }
 
-function centsToTop(cents) {
-  const clamped = Math.max(-200, Math.min(200, cents));
-  return 50 - clamped / 8;
+function hzToMidi(hz) {
+  const f = Number(hz);
+  if (!Number.isFinite(f) || f <= 0) return null;
+  return 69 + 12 * Math.log2(f / 440);
 }
 
-function setPitch(cents) {
-  const top = centsToTop(cents);
-  $("sungBar").style.top = `${top}%`;
+function setMidiRange(notes) {
+  const midis = (notes || [])
+    .map((n) => Number(n.midi ?? n))
+    .filter((m) => Number.isFinite(m));
+  if (!midis.length) {
+    midiLo = 48;
+    midiHi = 72;
+    return;
+  }
+  let lo = Math.min(...midis);
+  let hi = Math.max(...midis);
+  lo -= MIDI_PAD;
+  hi += MIDI_PAD;
+  if (hi - lo < MIDI_MIN_SPAN) {
+    const mid = (lo + hi) / 2;
+    lo = mid - MIDI_MIN_SPAN / 2;
+    hi = mid + MIDI_MIN_SPAN / 2;
+  }
+  midiLo = lo;
+  midiHi = hi;
+}
+
+function midiToY(midi) {
+  const span = Math.max(1, midiHi - midiLo);
+  const t = (Number(midi) - midiLo) / span;
+  const pct = 1 - Math.max(0, Math.min(1, t));
+  return 12 + pct * (LANE_H - 40);
+}
+
+function midiToCenterY(midi) {
+  return midiToY(midi) + NOTE_H / 2;
+}
+
+function midiToTopPct(midi) {
+  return (midiToCenterY(midi) / LANE_H) * 100;
+}
+
+function sungMidiFromState(state) {
+  const fromHz = hzToMidi(state.f0);
+  if (fromHz != null) return fromHz;
+  const expected = hzToMidi(state.expected_hz);
+  if (expected != null && Number.isFinite(state.cents)) {
+    return expected + Number(state.cents) / 100;
+  }
+  if (Number.isFinite(state.cents)) {
+    // Preview / cents-only fallback: keep motion around mid lane.
+    return (midiLo + midiHi) / 2 + Number(state.cents) / 100;
+  }
+  return null;
+}
+
+function setPitchMidi(midi, cents) {
+  if (!Number.isFinite(midi)) return;
+  const top = midiToTopPct(midi);
+  const sung = $("sungBar");
+  if (sung) sung.style.top = `${top}%`;
   const playhead = $("playhead");
   if (playhead) playhead.style.top = `${top}%`;
-  const onPitch = Math.abs(cents) < 35;
+  const onPitch = Number.isFinite(cents) ? Math.abs(cents) < 35 : false;
   $("hitStar")?.classList.toggle("on", onPitch);
+}
+
+/** @deprecated cents-centered path — kept for any external callers */
+function setPitch(cents) {
+  const midi = (midiLo + midiHi) / 2 + Number(cents) / 100;
+  setPitchMidi(midi, cents);
+}
+
+function clearPitchTrail() {
+  pitchTrail = [];
+  const canvas = $("pitchTrail");
+  const ctx = canvas?.getContext("2d");
+  if (canvas && ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+function recordPitchTrail(nowSec, midi) {
+  if (!Number.isFinite(nowSec)) return;
+  if (Number.isFinite(midi)) {
+    pitchTrail.push({ t: Number(nowSec), midi: Number(midi) });
+  }
+  const cutoff = Number(nowSec) - TRAIL_WINDOW_SEC;
+  while (pitchTrail.length && pitchTrail[0].t < cutoff) pitchTrail.shift();
+}
+
+function sizeTrailCanvas(canvas) {
+  const ratio = Math.max(1, window.devicePixelRatio || 1);
+  const width = Math.max(1, canvas.clientWidth);
+  const height = Math.max(1, canvas.clientHeight);
+  const pixelW = Math.round(width * ratio);
+  const pixelH = Math.round(height * ratio);
+  if (canvas.width !== pixelW || canvas.height !== pixelH) {
+    canvas.width = pixelW;
+    canvas.height = pixelH;
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  return { ctx, width, height };
+}
+
+function drawPitchTrail(nowSec) {
+  const canvas = $("pitchTrail");
+  if (!canvas || !Number.isFinite(nowSec)) return;
+  const { ctx, width, height } = sizeTrailCanvas(canvas);
+  ctx.clearRect(0, 0, width, height);
+  if (pitchTrail.length < 2) return;
+
+  const nowX = width * NOW_X_RATIO;
+  const gradient = ctx.createLinearGradient(
+    Math.max(0, nowX - TRAIL_WINDOW_SEC * PX_PER_SEC),
+    0,
+    nowX,
+    0,
+  );
+  gradient.addColorStop(0, "rgba(94, 240, 255, 0)");
+  gradient.addColorStop(0.22, "rgba(94, 240, 255, 0.35)");
+  gradient.addColorStop(1, "rgba(94, 240, 255, 0.95)");
+
+  ctx.strokeStyle = gradient;
+  ctx.lineWidth = 8;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.shadowColor = "rgba(94, 240, 255, 0.75)";
+  ctx.shadowBlur = 12;
+
+  const yScale = height / LANE_H;
+  let drawing = false;
+  let previousT = null;
+  for (const sample of pitchTrail) {
+    const age = Number(nowSec) - sample.t;
+    const x = nowX - age * PX_PER_SEC;
+    const y = midiToCenterY(sample.midi) * yScale;
+    if (x < 0 || x > nowX + 2) continue;
+    if (!drawing || previousT == null || sample.t - previousT > 0.22) {
+      if (drawing) ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      drawing = true;
+    } else {
+      ctx.lineTo(x, y);
+    }
+    previousT = sample.t;
+  }
+  if (drawing) ctx.stroke();
 }
 
 function paintHpBar(barId, valId, n) {
@@ -254,33 +399,40 @@ function setLyricLine(text, progress) {
   const str = text || "";
   lyricChars = [...str];
   if (!str) {
+    el.className = "lyric-line";
     el.textContent = "";
+    el.style.removeProperty("--ktv-p");
     return;
   }
-  // No timing yet → plain readable line (white)
+
+  const esc = (s) =>
+    s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+
+  // Rebuild DOM only when the line text changes (wipe updates via CSS var).
+  if (el.dataset.ktvText !== str) {
+    el.dataset.ktvText = str;
+    el.className = "lyric-line ktv";
+    el.innerHTML =
+      `<span class="ktv-base">${esc(str)}</span>` +
+      `<span class="ktv-fill" aria-hidden="true">${esc(str)}</span>`;
+  } else {
+    el.classList.add("ktv");
+  }
+
   if (progress == null || Number.isNaN(progress)) {
     lyricProgress = 0;
-    el.textContent = str;
+    el.classList.add("is-plain");
+    el.style.setProperty("--ktv-p", "0");
     return;
   }
-  lyricProgress = Math.max(0, Math.min(1, progress));
-  const cut = Math.floor(lyricChars.length * lyricProgress);
-  el.innerHTML = lyricChars
-    .map((ch, i) => {
-      const cls = i < cut ? "ch done" : i === cut ? "ch on" : "ch";
-      const safe = ch === " " ? "&nbsp;" : ch;
-      return `<span class="${cls}">${safe}</span>`;
-    })
-    .join("");
-}
 
-function midiToY(midi) {
-  // Map MIDI ~48–72 into lane
-  const lo = 48;
-  const hi = 72;
-  const t = (midi - lo) / (hi - lo);
-  const pct = 1 - Math.max(0, Math.min(1, t));
-  return 12 + pct * (LANE_H - 40);
+  lyricProgress = Math.max(0, Math.min(1, Number(progress)));
+  el.classList.remove("is-plain");
+  el.style.setProperty("--ktv-p", String(lyricProgress));
 }
 
 function clearNotes() {
@@ -291,7 +443,7 @@ function clearNotes() {
 function spawnNote(startSec, durSec, midi) {
   const el = document.createElement("div");
   el.className = "note-bar";
-  el.style.height = "16px";
+  el.style.height = `${NOTE_H}px`;
   el.style.width = `${Math.max(24, durSec * PX_PER_SEC)}px`;
   el.style.top = `${midiToY(midi)}px`;
   $("notesLayer").appendChild(el);
@@ -340,8 +492,9 @@ function gradeNotes(nowSec, state) {
 function syncNotes(nowSec) {
   const lane = $("pitchLane");
   const laneW = lane?.clientWidth || 1400;
+  const nowX = laneW * NOW_X_RATIO;
   for (const n of notePool) {
-    const startX = NOW_X + (n.start - nowSec) * PX_PER_SEC;
+    const startX = nowX + (n.start - nowSec) * PX_PER_SEC;
     const endX = startX + n.dur * PX_PER_SEC;
     n.el.style.transform = `translateX(${startX}px)`;
     const visible = endX > -40 && startX < laneW + 40;
@@ -352,13 +505,16 @@ function syncNotes(nowSec) {
 function seedDemoMelody(fromSec = 0) {
   clearNotes();
   const pattern = [60, 62, 64, 65, 67, 65, 64, 62, 60, 59, 57, 55, 57, 59, 60, 64];
+  const planned = [];
   let t = fromSec;
   for (let i = 0; i < 48; i++) {
     const midi = pattern[i % pattern.length] + (i % 7 === 0 ? 5 : 0);
     const dur = 0.28 + (i % 3) * 0.12;
-    spawnNote(t, dur, midi);
+    planned.push({ t, dur, midi });
     t += dur + (i % 4 === 3 ? 0.22 : 0.05);
   }
+  setMidiRange(planned);
+  for (const n of planned) spawnNote(n.t, n.dur, n.midi);
 }
 
 function applyState(state) {
@@ -373,7 +529,8 @@ function applyState(state) {
     if (nextEl) nextEl.textContent = state.lyricNext;
   }
   setBadges(state.badges || []);
-  if (state.cents != null) setPitch(state.cents);
+  const sungMidi = sungMidiFromState(state);
+  if (sungMidi != null) setPitchMidi(sungMidi, state.cents);
   if (state.hp) setHP(state.hp.pitch, state.hp.rhythm);
   if (state.stable != null) setStable(state.stable);
   setFail(Boolean(state.failed), state.fail_reason);
@@ -384,6 +541,8 @@ function applyState(state) {
     syncMvClock(playbackT, Boolean(state.running) && !state.failed);
   }
   if (state.nowSec != null) {
+    recordPitchTrail(state.nowSec, sungMidi);
+    drawPitchTrail(state.nowSec);
     gradeNotes(state.nowSec, state);
     syncNotes(state.nowSec);
   }
@@ -395,6 +554,9 @@ window.KaraokOverlay = {
   mvNeedsSeek,
   setBadges,
   setPitch,
+  setPitchMidi,
+  setMidiRange,
+  hzToMidi,
   setHP,
   setFail,
   setTimer,
@@ -433,6 +595,9 @@ if (preview) {
     const cents = Math.sin(now / 420) * 80;
     const late = cents < -50;
     const sharp = cents > 55;
+    // Demo absolute pitch wanders across the fitted MIDI lane.
+    const demoMidi = 60 + Math.sin(now / 900) * 8 + cents / 100;
+    const demoHz = 440 * 2 ** ((demoMidi - 69) / 12);
     progress += 0.012;
     if (progress >= 1) {
       progress = 0;
@@ -465,6 +630,8 @@ if (preview) {
       lyricProgress: progress,
       badges: [late ? "late" : "", sharp ? "sharp" : ""].filter(Boolean),
       cents,
+      f0: demoHz,
+      expected_hz: 440 * 2 ** ((60 - 69) / 12),
       hp: { pitch: hpPitch, rhythm: hpRhythm },
       failed,
       fail_reason: hpPitch <= 0 ? "pitch" : hpRhythm <= 0 ? "rhythm" : null,
@@ -484,6 +651,8 @@ if (!preview) {
     const msg = JSON.parse(ev.data);
     if (msg.type === "chart") {
       clearNotes();
+      clearPitchTrail();
+      setMidiRange(msg.notes || []);
       (msg.notes || []).forEach((n) => spawnNote(n.t, n.duration, n.midi || 60));
       if (msg.title) $("songTitle").textContent = msg.title;
       if (msg.singer != null) $("singerName").textContent = msg.singer || "—";
@@ -495,6 +664,7 @@ if (!preview) {
       return;
     }
     if (msg.type === "idle") {
+      clearPitchTrail();
       setFail(false);
       setSuccess(null);
       applyBg(msg.bg || { mode: bgMode, pack_id: bgPackId }, false);
@@ -502,6 +672,7 @@ if (!preview) {
       return;
     }
     if (msg.type === "result") {
+      clearPitchTrail();
       setSuccess(msg);
       applyBg(msg.bg || { mode: bgMode, pack_id: bgPackId }, false);
       pauseMv();

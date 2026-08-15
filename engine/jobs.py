@@ -424,6 +424,10 @@ def _fill_lyrics(
 
     if prefer_whisper:
         job.log.append("prefer_whisper — skip LRCLIB")
+        from engine.concurrency import live_audio_active
+
+        if live_audio_active():
+            job.log.append("live audio active — Whisper on CPU to avoid crash")
         return extract_lyrics(pack, language=lyrics_lang, model_name=whisper_model)
 
     meta = pack.load_meta()
@@ -477,5 +481,9 @@ def _fill_lyrics(
         except Exception as exc:
             job.log.append(f"lrclib apply failed ({type(exc).__name__}: {exc}); fallback ASR")
 
+    from engine.concurrency import live_audio_active
+
+    if live_audio_active():
+        job.log.append("live audio active — Whisper on CPU to avoid crash")
     lyrics = extract_lyrics(pack, language=lyrics_lang, model_name=whisper_model)
     return lyrics

@@ -68,3 +68,19 @@ def test_start_does_not_drop_model_cache():
 
     src = inspect.getsource(LiveSession.start)
     assert "drop_model_cache" not in src
+
+
+def test_set_thresholds_overrides_pitch_and_tempo_independently():
+    sess = LiveSession()
+    sess.set_difficulty("hard")
+    assert sess.cents_limit == 35.0
+    assert abs(sess.timing_limit - 0.06) < 1e-9
+    out = sess.set_thresholds(cents_limit=70.0)
+    assert out["cents_limit"] == 70.0
+    assert abs(out["timing_limit"] - 0.06) < 1e-9
+    out = sess.set_thresholds(timing_limit=0.12)
+    assert out["cents_limit"] == 70.0
+    assert abs(out["timing_limit"] - 0.12) < 1e-9
+    status = sess.status()
+    assert status["cents_limit"] == 70.0
+    assert abs(status["timing_limit"] - 0.12) < 1e-9

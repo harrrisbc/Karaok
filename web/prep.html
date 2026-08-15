@@ -30,7 +30,7 @@
           <option value="large-v3">large-v3（最準，第一次要 download）</option>
         </select>
       </label>
-      <p class="hint">一次只可以跑 <strong>一個</strong> job（GPU 共用）。Import 會開新 pack；舊歌想換 model 用 <strong>Analyze</strong>（先試 LRCLIB）。LRCLIB 唔啱就撳 <strong>Retry Whisper</strong> 強制 ASR。有正確歌詞就撳 <strong>Align lyrics</strong> 上傳 txt（一行一句）。</p>
+      <p class="hint">一次只可以跑 <strong>一個</strong> job（GPU 共用）。Import 會開新 pack；舊歌想換 model 用 <strong>Analyze</strong>（先試 LRCLIB）。LRCLIB 唔啱就撳 <strong>Retry Whisper</strong> 強制 ASR。有正確歌詞就撳 <strong>Align lyrics</strong> 上傳 txt（一行一句）。Whisper 喺 guitar solo／長器樂附近有時會漏前後一兩句 — 有官方歌詞就用 Align／LRCLIB。</p>
       <label>Singer name
         <input type="text" id="singer" placeholder="演唱者（Prep 寫入 pack，Live 都可以改）" maxlength="120" />
       </label>
